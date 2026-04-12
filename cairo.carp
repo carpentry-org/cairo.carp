@@ -1,0 +1,216 @@
+(system-include "cairo.h")
+(system-include "cairo-pdf.h")
+(system-include "cairo-svg.h")
+
+(posix-only (add-pkg "cairo"))
+
+;; Opaque handles
+(register-type CairoContext "cairo_t")
+(register-type CairoSurface "cairo_surface_t")
+(register-type CairoPattern "cairo_pattern_t")
+
+;; Enums (registered as distinct Carp types so constants don't collide with Int)
+(register-type CairoStatus "cairo_status_t")
+(register-type CairoFormat "cairo_format_t")
+(register-type CairoAntialias "cairo_antialias_t")
+(register-type CairoLineCap "cairo_line_cap_t")
+(register-type CairoLineJoin "cairo_line_join_t")
+(register-type CairoFillRule "cairo_fill_rule_t")
+(register-type CairoOperator "cairo_operator_t")
+(register-type CairoFontSlant "cairo_font_slant_t")
+(register-type CairoFontWeight "cairo_font_weight_t")
+
+(doc Cairo "Thin FFI bindings over the [Cairo 2D graphics library](https://www.cairographics.org/).
+
+The goal of this module is to expose Cairo's C API with Carp-friendly naming (kebab-case, grouped under `Cairo`), without adding a higher-level wrapper on top. Higher-level sketching primitives live in [anima.carp](https://github.com/carpentry-org/anima.carp).
+
+## Installation
+
+Cairo must be installed on the system and discoverable via `pkg-config`:
+
+```
+brew install cairo        # macOS
+apt install libcairo2-dev # Debian / Ubuntu
+```
+
+## Example
+
+```clojure
+(load \"cairo.carp\")
+
+(defn main []
+  (let-do [surf (Cairo.image-surface-create Cairo.format-argb32 200 200)
+           cr (Cairo.create surf)]
+    (Cairo.set-source-rgb cr 1.0 1.0 1.0)
+    (Cairo.paint cr)
+    (Cairo.set-source-rgb cr 0.0 0.0 0.0)
+    (Cairo.set-line-width cr 4.0)
+    (Cairo.move-to cr 20.0 20.0)
+    (Cairo.line-to cr 180.0 180.0)
+    (Cairo.stroke cr)
+    (ignore (Cairo.surface-write-to-png surf (cstr \"out.png\")))
+    (Cairo.destroy cr)
+    (Cairo.surface-destroy surf)))
+```
+
+## Memory management
+
+Cairo uses reference counting internally; this binding does not manage
+lifetimes for you. Every `Cairo.create` must be paired with a `Cairo.destroy`,
+and every `*-surface-create` with a `Cairo.surface-destroy`. See the [Cairo
+manual](https://www.cairographics.org/manual/) for details.")
+(defmodule Cairo
+  ;; --- Status ---
+  (doc status-success "Success status code returned by most Cairo operations.")
+  (register status-success CairoStatus "CAIRO_STATUS_SUCCESS")
+  (register status-to-string (Fn [CairoStatus] (Ptr CChar)) "cairo_status_to_string")
+
+  (doc = "Equality on status codes, implemented by converting to `Int` first.")
+  (defn = [a b]
+    (Int.= (enum-to-int (the CairoStatus a))
+           (enum-to-int (the CairoStatus b))))
+  (implements = Cairo.=)
+
+  (doc success? "Returns `true` if the given status equals `status-success`.")
+  (defn success? [s]
+    (Cairo.= s status-success))
+
+  ;; --- Format ---
+  (doc format-argb32 "32-bit ARGB, native-endian. Matches `SDL_PIXELFORMAT_ARGB8888` on little-endian.")
+  (register format-argb32 CairoFormat "CAIRO_FORMAT_ARGB32")
+  (register format-rgb24 CairoFormat "CAIRO_FORMAT_RGB24")
+  (register format-a8 CairoFormat "CAIRO_FORMAT_A8")
+  (register format-a1 CairoFormat "CAIRO_FORMAT_A1")
+
+  ;; --- Antialias ---
+  (register antialias-default CairoAntialias "CAIRO_ANTIALIAS_DEFAULT")
+  (register antialias-none CairoAntialias "CAIRO_ANTIALIAS_NONE")
+  (register antialias-gray CairoAntialias "CAIRO_ANTIALIAS_GRAY")
+  (register antialias-subpixel CairoAntialias "CAIRO_ANTIALIAS_SUBPIXEL")
+  (register antialias-fast CairoAntialias "CAIRO_ANTIALIAS_FAST")
+  (register antialias-good CairoAntialias "CAIRO_ANTIALIAS_GOOD")
+  (register antialias-best CairoAntialias "CAIRO_ANTIALIAS_BEST")
+
+  ;; --- Line cap ---
+  (register line-cap-butt CairoLineCap "CAIRO_LINE_CAP_BUTT")
+  (register line-cap-round CairoLineCap "CAIRO_LINE_CAP_ROUND")
+  (register line-cap-square CairoLineCap "CAIRO_LINE_CAP_SQUARE")
+
+  ;; --- Line join ---
+  (register line-join-miter CairoLineJoin "CAIRO_LINE_JOIN_MITER")
+  (register line-join-round CairoLineJoin "CAIRO_LINE_JOIN_ROUND")
+  (register line-join-bevel CairoLineJoin "CAIRO_LINE_JOIN_BEVEL")
+
+  ;; --- Fill rule ---
+  (register fill-rule-winding CairoFillRule "CAIRO_FILL_RULE_WINDING")
+  (register fill-rule-even-odd CairoFillRule "CAIRO_FILL_RULE_EVEN_ODD")
+
+  ;; --- Operators (compositing) ---
+  (register operator-clear CairoOperator "CAIRO_OPERATOR_CLEAR")
+  (register operator-source CairoOperator "CAIRO_OPERATOR_SOURCE")
+  (register operator-over CairoOperator "CAIRO_OPERATOR_OVER")
+  (register operator-in CairoOperator "CAIRO_OPERATOR_IN")
+  (register operator-out CairoOperator "CAIRO_OPERATOR_OUT")
+  (register operator-atop CairoOperator "CAIRO_OPERATOR_ATOP")
+  (register operator-dest CairoOperator "CAIRO_OPERATOR_DEST")
+  (register operator-dest-over CairoOperator "CAIRO_OPERATOR_DEST_OVER")
+  (register operator-dest-in CairoOperator "CAIRO_OPERATOR_DEST_IN")
+  (register operator-dest-out CairoOperator "CAIRO_OPERATOR_DEST_OUT")
+  (register operator-dest-atop CairoOperator "CAIRO_OPERATOR_DEST_ATOP")
+  (register operator-xor CairoOperator "CAIRO_OPERATOR_XOR")
+  (register operator-add CairoOperator "CAIRO_OPERATOR_ADD")
+  (register operator-multiply CairoOperator "CAIRO_OPERATOR_MULTIPLY")
+  (register operator-screen CairoOperator "CAIRO_OPERATOR_SCREEN")
+
+  ;; --- Font slant / weight ---
+  (register slant-normal CairoFontSlant "CAIRO_FONT_SLANT_NORMAL")
+  (register slant-italic CairoFontSlant "CAIRO_FONT_SLANT_ITALIC")
+  (register slant-oblique CairoFontSlant "CAIRO_FONT_SLANT_OBLIQUE")
+  (register weight-normal CairoFontWeight "CAIRO_FONT_WEIGHT_NORMAL")
+  (register weight-bold CairoFontWeight "CAIRO_FONT_WEIGHT_BOLD")
+
+  ;; --- Surface creation ---
+  (doc image-surface-create "Create an in-memory image surface of the given format, width, and height.")
+  (register image-surface-create (Fn [CairoFormat Int Int] (Ptr CairoSurface)) "cairo_image_surface_create")
+  (doc pdf-surface-create "Create a PDF surface writing to `filename` with dimensions in points (1 point = 1/72 inch).")
+  (register pdf-surface-create (Fn [(Ptr CChar) Double Double] (Ptr CairoSurface)) "cairo_pdf_surface_create")
+  (doc svg-surface-create "Create an SVG surface writing to `filename` with dimensions in points.")
+  (register svg-surface-create (Fn [(Ptr CChar) Double Double] (Ptr CairoSurface)) "cairo_svg_surface_create")
+
+  ;; --- Image surface accessors ---
+  (doc image-surface-get-data "Return a raw pointer to the surface's pixel buffer. Must be preceded by `surface-flush`.")
+  (register image-surface-get-data (Fn [(Ptr CairoSurface)] (Ptr Byte)) "cairo_image_surface_get_data")
+  (register image-surface-get-stride (Fn [(Ptr CairoSurface)] Int) "cairo_image_surface_get_stride")
+  (register image-surface-get-width (Fn [(Ptr CairoSurface)] Int) "cairo_image_surface_get_width")
+  (register image-surface-get-height (Fn [(Ptr CairoSurface)] Int) "cairo_image_surface_get_height")
+
+  ;; --- Surface lifecycle / IO ---
+  (register surface-destroy (Fn [(Ptr CairoSurface)] ()) "cairo_surface_destroy")
+  (doc surface-flush "Ensure pending drawing for the surface has been applied. Required before reading pixels directly.")
+  (register surface-flush (Fn [(Ptr CairoSurface)] ()) "cairo_surface_flush")
+  (register surface-finish (Fn [(Ptr CairoSurface)] ()) "cairo_surface_finish")
+  (register surface-status (Fn [(Ptr CairoSurface)] CairoStatus) "cairo_surface_status")
+  (doc surface-write-to-png "Write the contents of an image surface to a PNG file. Returns a `CairoStatus`.")
+  (register surface-write-to-png (Fn [(Ptr CairoSurface) (Ptr CChar)] CairoStatus) "cairo_surface_write_to_png")
+
+  ;; --- Context lifecycle ---
+  (doc create "Create a drawing context targeting the given surface. Must be paired with `destroy`.")
+  (register create (Fn [(Ptr CairoSurface)] (Ptr CairoContext)) "cairo_create")
+  (register destroy (Fn [(Ptr CairoContext)] ()) "cairo_destroy")
+  (register status (Fn [(Ptr CairoContext)] CairoStatus) "cairo_status")
+  (doc save "Push a copy of the current drawing state onto an internal stack.")
+  (register save (Fn [(Ptr CairoContext)] ()) "cairo_save")
+  (doc restore "Pop the top drawing state off the stack and make it current.")
+  (register restore (Fn [(Ptr CairoContext)] ()) "cairo_restore")
+
+  ;; --- Transforms ---
+  (register translate (Fn [(Ptr CairoContext) Double Double] ()) "cairo_translate")
+  (doc rotate "Rotate the current transformation by `angle` radians.")
+  (register rotate (Fn [(Ptr CairoContext) Double] ()) "cairo_rotate")
+  (register scale (Fn [(Ptr CairoContext) Double Double] ()) "cairo_scale")
+  (register identity-matrix (Fn [(Ptr CairoContext)] ()) "cairo_identity_matrix")
+
+  ;; --- Path construction ---
+  (register new-path (Fn [(Ptr CairoContext)] ()) "cairo_new_path")
+  (register new-sub-path (Fn [(Ptr CairoContext)] ()) "cairo_new_sub_path")
+  (register move-to (Fn [(Ptr CairoContext) Double Double] ()) "cairo_move_to")
+  (register line-to (Fn [(Ptr CairoContext) Double Double] ()) "cairo_line_to")
+  (doc curve-to "Append a cubic Bézier spline through `(x1 y1)`, `(x2 y2)`, `(x3 y3)`.")
+  (register curve-to (Fn [(Ptr CairoContext) Double Double Double Double Double Double] ()) "cairo_curve_to")
+  (register rel-move-to (Fn [(Ptr CairoContext) Double Double] ()) "cairo_rel_move_to")
+  (register rel-line-to (Fn [(Ptr CairoContext) Double Double] ()) "cairo_rel_line_to")
+  (register rel-curve-to (Fn [(Ptr CairoContext) Double Double Double Double Double Double] ()) "cairo_rel_curve_to")
+  (doc arc "Add a circular arc centered at `(xc yc)` with `radius`, sweeping from `angle1` to `angle2` radians (positive = clockwise in Cairo's default orientation).")
+  (register arc (Fn [(Ptr CairoContext) Double Double Double Double Double] ()) "cairo_arc")
+  (register arc-negative (Fn [(Ptr CairoContext) Double Double Double Double Double] ()) "cairo_arc_negative")
+  (register rectangle (Fn [(Ptr CairoContext) Double Double Double Double] ()) "cairo_rectangle")
+  (register close-path (Fn [(Ptr CairoContext)] ()) "cairo_close_path")
+
+  ;; --- Painting ---
+  (register stroke (Fn [(Ptr CairoContext)] ()) "cairo_stroke")
+  (register stroke-preserve (Fn [(Ptr CairoContext)] ()) "cairo_stroke_preserve")
+  (register fill (Fn [(Ptr CairoContext)] ()) "cairo_fill")
+  (register fill-preserve (Fn [(Ptr CairoContext)] ()) "cairo_fill_preserve")
+  (doc paint "Paint the current source everywhere within the current clip region.")
+  (register paint (Fn [(Ptr CairoContext)] ()) "cairo_paint")
+  (register paint-with-alpha (Fn [(Ptr CairoContext) Double] ()) "cairo_paint_with_alpha")
+  (register clip (Fn [(Ptr CairoContext)] ()) "cairo_clip")
+  (register clip-preserve (Fn [(Ptr CairoContext)] ()) "cairo_clip_preserve")
+  (register reset-clip (Fn [(Ptr CairoContext)] ()) "cairo_reset_clip")
+
+  ;; --- Drawing state ---
+  (register set-source-rgb (Fn [(Ptr CairoContext) Double Double Double] ()) "cairo_set_source_rgb")
+  (register set-source-rgba (Fn [(Ptr CairoContext) Double Double Double Double] ()) "cairo_set_source_rgba")
+  (register set-line-width (Fn [(Ptr CairoContext) Double] ()) "cairo_set_line_width")
+  (register set-line-cap (Fn [(Ptr CairoContext) CairoLineCap] ()) "cairo_set_line_cap")
+  (register set-line-join (Fn [(Ptr CairoContext) CairoLineJoin] ()) "cairo_set_line_join")
+  (register set-operator (Fn [(Ptr CairoContext) CairoOperator] ()) "cairo_set_operator")
+  (register set-antialias (Fn [(Ptr CairoContext) CairoAntialias] ()) "cairo_set_antialias")
+  (register set-fill-rule (Fn [(Ptr CairoContext) CairoFillRule] ()) "cairo_set_fill_rule")
+
+  ;; --- Text ---
+  (doc select-font-face "Select a font face by family name, slant, and weight. Uses Cairo's built-in toy text API.")
+  (register select-font-face (Fn [(Ptr CairoContext) (Ptr CChar) CairoFontSlant CairoFontWeight] ()) "cairo_select_font_face")
+  (register set-font-size (Fn [(Ptr CairoContext) Double] ()) "cairo_set_font_size")
+  (register show-text (Fn [(Ptr CairoContext) (Ptr CChar)] ()) "cairo_show_text")
+)

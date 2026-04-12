@@ -1,0 +1,9 @@
+(load "cairo.carp")
+
+(Project.config "title" "cairo")
+(Project.config "docs-directory" "./docs/")
+(Project.config "docs-logo" "")
+(Project.config "docs-generate-index" false)
+(save-docs Cairo)
+
+(quit)

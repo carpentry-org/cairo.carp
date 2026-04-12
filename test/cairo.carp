@@ -1,0 +1,114 @@
+(load "Test.carp")
+(load "cairo.carp")
+
+(use-all Test Cairo)
+
+;; Tiny file-existence helper used only in this test.
+(deftemplate file-exists? (Fn [(Ptr CChar)] Bool)
+  "bool $NAME(const char* path)"
+  "$DECL { FILE* f = fopen(path, \"r\"); if (f) { fclose(f); return true; } return false; }")
+
+(private out-png)
+(hidden out-png)
+(def out-png "cairo-test.png")
+
+(private out-svg)
+(hidden out-svg)
+(def out-svg "cairo-test.svg")
+
+(defn draw-test [cr]
+  (do
+    ;; White background
+    (set-source-rgb cr 1.0 1.0 1.0)
+    (paint cr)
+    ;; Black diagonal stroke
+    (set-source-rgb cr 0.0 0.0 0.0)
+    (set-line-width cr 4.0)
+    (set-line-cap cr line-cap-round)
+    (move-to cr 20.0 20.0)
+    (line-to cr 180.0 180.0)
+    (stroke cr)
+    ;; Red filled rectangle
+    (set-source-rgba cr 1.0 0.0 0.0 0.75)
+    (rectangle cr 40.0 40.0 80.0 80.0)
+    (fill cr)
+    ;; Cubic bezier
+    (set-source-rgb cr 0.0 0.5 1.0)
+    (set-line-width cr 2.0)
+    (move-to cr 10.0 190.0)
+    (curve-to cr 60.0 10.0 140.0 10.0 190.0 190.0)
+    (stroke cr)
+    ;; An arc, at a translated/rotated origin, to exercise save/restore
+    (save cr)
+    (translate cr 100.0 100.0)
+    (rotate cr 0.5)
+    (set-source-rgb cr 0.0 0.8 0.0)
+    (arc cr 0.0 0.0 30.0 0.0 6.283185307)
+    (stroke cr)
+    (restore cr)))
+
+;; Each helper runs one setup/draw/teardown cycle and returns a Bool so the
+;; assertions in main can stay flat.
+
+(defn write-png-ok? []
+  (let-do [surf (image-surface-create format-argb32 200 200)
+           cr (create surf)]
+    (draw-test cr)
+    (let-do [status (surface-write-to-png surf (cstr out-png))
+             ok (success? status)]
+      (destroy cr)
+      (surface-destroy surf)
+      ok)))
+
+(defn surface-dims-ok? []
+  (let-do [surf (image-surface-create format-argb32 200 200)
+           w (image-surface-get-width surf)
+           h (image-surface-get-height surf)
+           stride (image-surface-get-stride surf)
+           ok (and (= 200 w) (and (= 200 h) (> stride 0)))]
+    (surface-destroy surf)
+    ok))
+
+(defn context-status-ok? []
+  (let-do [surf (image-surface-create format-argb32 50 50)
+           cr (create surf)]
+    (draw-test cr)
+    (let-do [ok (success? (status cr))]
+      (destroy cr)
+      (surface-destroy surf)
+      ok)))
+
+(defn write-svg-ok? []
+  (let-do [svg (svg-surface-create (cstr out-svg) 100.0 100.0)
+           cr (create svg)]
+    (set-source-rgb cr 0.2 0.2 0.2)
+    (move-to cr 10.0 10.0)
+    (line-to cr 90.0 90.0)
+    (stroke cr)
+    (destroy cr)
+    (surface-destroy svg)
+    true))
+
+(defn main []
+  (with-test test
+    (assert-true test
+                 (write-png-ok?)
+                 "image surface draws and writes PNG with STATUS_SUCCESS")
+    (assert-true test
+                 (file-exists? (cstr out-png))
+                 "PNG file landed on disk")
+    (assert-true test
+                 (surface-dims-ok?)
+                 "image-surface-get-width / -height / -stride agree with creation")
+    (assert-true test
+                 (context-status-ok?)
+                 "context status is success after a sequence of draws")
+    (assert-true test
+                 (write-svg-ok?)
+                 "SVG surface accepts draw commands without crashing")
+    (assert-true test
+                 (file-exists? (cstr out-svg))
+                 "SVG file landed on disk")
+    (assert-true test
+                 (Cairo.= status-success status-success)
+                 "status equality is reflexive")))
