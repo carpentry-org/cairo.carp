@@ -4,7 +4,9 @@
 (use-all Test Cairo)
 
 ;; Tiny file-existence helper used only in this test.
-(deftemplate file-exists? (Fn [(Ptr CChar)] Bool)
+(deftemplate
+  file-exists?
+  (Fn [(Ptr CChar)] Bool)
   "bool $NAME(const char* path)"
   "$DECL { FILE* f = fopen(path, \"r\"); if (f) { fclose(f); return true; } return false; }")
 
@@ -43,7 +45,7 @@
     (translate cr 100.0 100.0)
     (rotate cr 0.5)
     (set-source-rgb cr 0.0 0.8 0.0)
-    (arc cr 0.0 0.0 30.0 0.0 6.283185307)
+    (arc cr 0.0 0.0 30.0 0.0 6.28319)
     (stroke cr)
     (restore cr)))
 
@@ -73,10 +75,7 @@
   (let-do [surf (image-surface-create format-argb32 50 50)
            cr (create surf)]
     (draw-test cr)
-    (let-do [ok (success? (status cr))]
-      (destroy cr)
-      (surface-destroy surf)
-      ok)))
+    (let-do [ok (success? (status cr))] (destroy cr) (surface-destroy surf) ok)))
 
 (defn write-svg-ok? []
   (let-do [svg (svg-surface-create (cstr out-svg) 100.0 100.0)
@@ -92,23 +91,19 @@
 (defn main []
   (with-test test
     (assert-true test
-                 (write-png-ok?)
-                 "image surface draws and writes PNG with STATUS_SUCCESS")
+      (write-png-ok?)
+      "image surface draws and writes PNG with STATUS_SUCCESS")
+    (assert-true test (file-exists? (cstr out-png)) "PNG file landed on disk")
     (assert-true test
-                 (file-exists? (cstr out-png))
-                 "PNG file landed on disk")
+      (surface-dims-ok?)
+      "image-surface-get-width / -height / -stride agree with creation")
     (assert-true test
-                 (surface-dims-ok?)
-                 "image-surface-get-width / -height / -stride agree with creation")
+      (context-status-ok?)
+      "context status is success after a sequence of draws")
     (assert-true test
-                 (context-status-ok?)
-                 "context status is success after a sequence of draws")
+      (write-svg-ok?)
+      "SVG surface accepts draw commands without crashing")
+    (assert-true test (file-exists? (cstr out-svg)) "SVG file landed on disk")
     (assert-true test
-                 (write-svg-ok?)
-                 "SVG surface accepts draw commands without crashing")
-    (assert-true test
-                 (file-exists? (cstr out-svg))
-                 "SVG file landed on disk")
-    (assert-true test
-                 (Cairo.= status-success status-success)
-                 "status equality is reflexive")))
+      (Cairo.= status-success status-success)
+      "status equality is reflexive")))
