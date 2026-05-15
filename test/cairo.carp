@@ -4,11 +4,10 @@
 (use-all Test Cairo)
 
 ;; Tiny file-existence helper used only in this test.
-(deftemplate
-  file-exists?
-  (Fn [(Ptr CChar)] Bool)
-  "bool $NAME(const char* path)"
-  "$DECL { FILE* f = fopen(path, \"r\"); if (f) { fclose(f); return true; } return false; }")
+(deftemplate file-exists?
+             (Fn [(Ptr CChar)] Bool)
+             "bool $NAME(const char* path)"
+             "$DECL { FILE* f = fopen(path, \"r\"); if (f) { fclose(f); return true; } return false; }")
 
 (private out-png)
 (hidden out-png)
