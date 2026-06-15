@@ -20,6 +20,31 @@
 (register-type CairoFontSlant "cairo_font_slant_t")
 (register-type CairoFontWeight "cairo_font_weight_t")
 
+;; Carp-side record types for multi-value query results
+(doc CairoExtents
+  "Axis-aligned bounding box returned by `fill-extents`, `stroke-extents`, and `path-extents`.")
+(deftype CairoExtents [x1 Double
+                       y1 Double
+                       x2 Double
+                       y2 Double])
+(doc CairoTextExtents
+  "Text measurement returned by `text-extents`: bearing, ink size, and advance.")
+(deftype CairoTextExtents
+  [x-bearing Double
+   y-bearing Double
+   width Double
+   height Double
+   x-advance Double
+   y-advance Double])
+(doc CairoFontExtents
+  "Font-level metrics returned by `font-extents`: ascent, descent, height, and maximum advances.")
+(deftype CairoFontExtents
+  [ascent Double
+   descent Double
+   height Double
+   max-x-advance Double
+   max-y-advance Double])
+
 (doc Cairo
   "Thin FFI bindings over the [Cairo 2D graphics library](https://www.cairographics.org/).
 
@@ -231,6 +256,26 @@ manual](https://www.cairographics.org/manual/) for details.")
     "cairo_rectangle")
   (register close-path (Fn [(Ptr CairoContext)] ()) "cairo_close_path")
 
+  ;; --- Path queries ---
+  (doc has-current-point?
+    "Return `true` if the context has a current point (after `move-to` or drawing operations).")
+  (deftemplate has-current-point?
+               (Fn [(Ptr CairoContext)] Bool)
+               "bool $NAME(cairo_t *cr)"
+               "$DECL { return (bool)cairo_has_current_point(cr); }")
+  (doc get-current-point-x
+    "Return the x coordinate of the current point. Undefined if `has-current-point?` is false.")
+  (deftemplate get-current-point-x
+               (Fn [(Ptr CairoContext)] Double)
+               "double $NAME(cairo_t *cr)"
+               "$DECL { double x, y; cairo_get_current_point(cr, &x, &y); return x; }")
+  (doc get-current-point-y
+    "Return the y coordinate of the current point. Undefined if `has-current-point?` is false.")
+  (deftemplate get-current-point-y
+               (Fn [(Ptr CairoContext)] Double)
+               "double $NAME(cairo_t *cr)"
+               "$DECL { double x, y; cairo_get_current_point(cr, &x, &y); return y; }")
+
   ;; --- Painting ---
   (register stroke (Fn [(Ptr CairoContext)] ()) "cairo_stroke")
   (register stroke-preserve (Fn [(Ptr CairoContext)] ()) "cairo_stroke_preserve")
@@ -245,6 +290,26 @@ manual](https://www.cairographics.org/manual/) for details.")
   (register clip (Fn [(Ptr CairoContext)] ()) "cairo_clip")
   (register clip-preserve (Fn [(Ptr CairoContext)] ()) "cairo_clip_preserve")
   (register reset-clip (Fn [(Ptr CairoContext)] ()) "cairo_reset_clip")
+
+  ;; --- Extents queries ---
+  (doc fill-extents
+    "Compute the bounding box of the area that would be affected by `fill`.")
+  (deftemplate fill-extents
+               (Fn [(Ptr CairoContext)] CairoExtents)
+               "CairoExtents $NAME(cairo_t *cr)"
+               "$DECL { CairoExtents e; cairo_fill_extents(cr, &e.x1, &e.y1, &e.x2, &e.y2); return e; }")
+  (doc stroke-extents
+    "Compute the bounding box of the area that would be affected by `stroke`.")
+  (deftemplate stroke-extents
+               (Fn [(Ptr CairoContext)] CairoExtents)
+               "CairoExtents $NAME(cairo_t *cr)"
+               "$DECL { CairoExtents e; cairo_stroke_extents(cr, &e.x1, &e.y1, &e.x2, &e.y2); return e; }")
+  (doc path-extents
+    "Compute the bounding box enclosing the current path, ignoring stroke parameters.")
+  (deftemplate path-extents
+               (Fn [(Ptr CairoContext)] CairoExtents)
+               "CairoExtents $NAME(cairo_t *cr)"
+               "$DECL { CairoExtents e; cairo_path_extents(cr, &e.x1, &e.y1, &e.x2, &e.y2); return e; }")
 
   ;; --- Drawing state ---
   (register set-source-rgb
@@ -272,6 +337,35 @@ manual](https://www.cairographics.org/manual/) for details.")
     (Fn [(Ptr CairoContext) CairoFillRule] ())
     "cairo_set_fill_rule")
 
+  ;; --- Dash patterns ---
+  (doc set-dash
+    "Set the dash pattern. `dashes` is an array of on/off lengths; `offset` shifts the pattern start.")
+  (deftemplate set-dash
+               (Fn [(Ptr CairoContext) (Ref (Array Double)) Double] ())
+               "void $NAME(cairo_t *cr, Array *dashes, double offset)"
+               "$DECL { cairo_set_dash(cr, (double*)dashes->data, dashes->len, offset); }")
+  (doc get-dash-count
+    "Return the number of dash segments in the current dash pattern (0 means solid).")
+  (register get-dash-count (Fn [(Ptr CairoContext)] Int) "cairo_get_dash_count")
+  (doc get-dash "Return the current dash pattern as an array of doubles.")
+  (deftemplate get-dash
+               (Fn [(Ptr CairoContext)] (Array Double))
+               "Array $NAME(cairo_t *cr)"
+               "$DECL { int n = cairo_get_dash_count(cr); Array a; a.len = n; a.capacity = n; if (n > 0) { a.data = CARP_MALLOC(n * sizeof(double)); cairo_get_dash(cr, (double*)a.data, NULL); } else { a.data = NULL; } return a; }")
+  (doc get-dash-offset
+    "Return the offset into the dash pattern set by `set-dash`.")
+  (deftemplate get-dash-offset
+               (Fn [(Ptr CairoContext)] Double)
+               "double $NAME(cairo_t *cr)"
+               "$DECL { double offset; cairo_get_dash(cr, NULL, &offset); return offset; }")
+
+  ;; --- Source surface ---
+  (doc set-source-surface
+    "Set a surface as the source pattern, translated to `(x y)`.")
+  (register set-source-surface
+    (Fn [(Ptr CairoContext) (Ptr CairoSurface) Double Double] ())
+    "cairo_set_source_surface")
+
   ;; --- Text ---
   (doc select-font-face
     "Select a font face by family name, slant, and weight. Uses Cairo's built-in toy text API.")
@@ -281,4 +375,18 @@ manual](https://www.cairographics.org/manual/) for details.")
   (register set-font-size
     (Fn [(Ptr CairoContext) Double] ())
     "cairo_set_font_size")
-  (register show-text (Fn [(Ptr CairoContext) (Ptr CChar)] ()) "cairo_show_text"))
+  (register show-text (Fn [(Ptr CairoContext) (Ptr CChar)] ()) "cairo_show_text")
+
+  ;; --- Text measurement ---
+  (doc text-extents
+    "Measure `text` and return a `CairoTextExtents` with bearing, size, and advance fields.")
+  (deftemplate text-extents
+               (Fn [(Ptr CairoContext) (Ptr CChar)] CairoTextExtents)
+               "CairoTextExtents $NAME(cairo_t *cr, const char *text)"
+               "$DECL { cairo_text_extents_t ct; cairo_text_extents(cr, text, &ct); CairoTextExtents e; e.x_MINUS_bearing = ct.x_bearing; e.y_MINUS_bearing = ct.y_bearing; e.width = ct.width; e.height = ct.height; e.x_MINUS_advance = ct.x_advance; e.y_MINUS_advance = ct.y_advance; return e; }")
+  (doc font-extents
+    "Return a `CairoFontExtents` for the current font (ascent, descent, height, max advances).")
+  (deftemplate font-extents
+               (Fn [(Ptr CairoContext)] CairoFontExtents)
+               "CairoFontExtents $NAME(cairo_t *cr)"
+               "$DECL { cairo_font_extents_t cf; cairo_font_extents(cr, &cf); CairoFontExtents e; e.ascent = cf.ascent; e.descent = cf.descent; e.height = cf.height; e.max_MINUS_x_MINUS_advance = cf.max_x_advance; e.max_MINUS_y_MINUS_advance = cf.max_y_advance; return e; }"))

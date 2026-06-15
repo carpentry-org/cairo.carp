@@ -87,6 +87,114 @@
     (surface-destroy svg)
     true))
 
+(defn current-point-ok? []
+  (let-do [surf (image-surface-create format-argb32 50 50)
+           cr (create surf)
+           has-before (has-current-point? cr)]
+    (move-to cr 42.0 17.0)
+    (let-do [has-after (has-current-point? cr)
+             x (get-current-point-x cr)
+             y (get-current-point-y cr)
+             ok (and (not has-before)
+                     (and has-after
+                          (and (< (Double.abs (- x 42.0)) 0.001)
+                               (< (Double.abs (- y 17.0)) 0.001))))]
+      (destroy cr)
+      (surface-destroy surf)
+      ok)))
+
+(defn dash-ok? []
+  (let-do [surf (image-surface-create format-argb32 50 50)
+           cr (create surf)
+           dashes [5.0 3.0 1.0]]
+    (set-dash cr &dashes 2.0)
+    (let-do [count (get-dash-count cr)
+             got (get-dash cr)
+             offset (get-dash-offset cr)
+             ok (and (= 3 count)
+                     (and (= 3 (Array.length &got))
+                          (< (Double.abs (- offset 2.0)) 0.001)))]
+      (destroy cr)
+      (surface-destroy surf)
+      ok)))
+
+(defn fill-extents-ok? []
+  (let-do [surf (image-surface-create format-argb32 200 200)
+           cr (create surf)]
+    (rectangle cr 10.0 20.0 30.0 40.0)
+    (let-do [fe (fill-extents cr)
+             ok (and
+               (< (Double.abs (- @(CairoExtents.x1 &fe) 10.0)) 0.001)
+               (and
+                 (< (Double.abs (- @(CairoExtents.y1 &fe) 20.0)) 0.001)
+                 (and
+                   (< (Double.abs (- @(CairoExtents.x2 &fe) 40.0)) 0.001)
+                   (< (Double.abs (- @(CairoExtents.y2 &fe) 60.0)) 0.001))))]
+      (destroy cr)
+      (surface-destroy surf)
+      ok)))
+
+(defn stroke-extents-ok? []
+  (let-do [surf (image-surface-create format-argb32 200 200)
+           cr (create surf)]
+    (set-line-width cr 2.0)
+    (move-to cr 10.0 10.0)
+    (line-to cr 50.0 50.0)
+    (let-do [se (stroke-extents cr)
+             ok (and (< @(CairoExtents.x1 &se) 10.0)
+                     (> @(CairoExtents.x2 &se) 50.0))]
+      (destroy cr)
+      (surface-destroy surf)
+      ok)))
+
+(defn path-extents-ok? []
+  (let-do [surf (image-surface-create format-argb32 200 200)
+           cr (create surf)]
+    (move-to cr 10.0 10.0)
+    (line-to cr 50.0 50.0)
+    (let-do [pe (path-extents cr)
+             ok (and
+               (< (Double.abs (- @(CairoExtents.x1 &pe) 10.0)) 0.001)
+               (< (Double.abs (- @(CairoExtents.x2 &pe) 50.0)) 0.001))]
+      (destroy cr)
+      (surface-destroy surf)
+      ok)))
+
+(defn text-extents-ok? []
+  (let-do [surf (image-surface-create format-argb32 200 200)
+           cr (create surf)]
+    (select-font-face cr (cstr "sans") slant-normal weight-normal)
+    (set-font-size cr 20.0)
+    (let-do [te (text-extents cr (cstr "Hello"))
+             ok (> @(CairoTextExtents.width &te) 0.0)]
+      (destroy cr)
+      (surface-destroy surf)
+      ok)))
+
+(defn font-extents-ok? []
+  (let-do [surf (image-surface-create format-argb32 200 200)
+           cr (create surf)]
+    (select-font-face cr (cstr "sans") slant-normal weight-normal)
+    (set-font-size cr 20.0)
+    (let-do [fe (font-extents cr)
+             ok (and (> @(CairoFontExtents.ascent &fe) 0.0)
+                     (> @(CairoFontExtents.height &fe) 0.0))]
+      (destroy cr)
+      (surface-destroy surf)
+      ok)))
+
+(defn source-surface-ok? []
+  (let-do [surf (image-surface-create format-argb32 100 100)
+           src (image-surface-create format-argb32 50 50)
+           cr (create surf)]
+    (set-source-surface cr src 10.0 10.0)
+    (paint cr)
+    (let-do [ok (success? (status cr))]
+      (destroy cr)
+      (surface-destroy src)
+      (surface-destroy surf)
+      ok)))
+
 (defn main []
   (with-test test
     (assert-true test
@@ -105,4 +213,24 @@
     (assert-true test (file-exists? (cstr out-svg)) "SVG file landed on disk")
     (assert-true test
       (Cairo.= status-success status-success)
-      "status equality is reflexive")))
+      "status equality is reflexive")
+    (assert-true test
+      (current-point-ok?)
+      "has-current-point? / get-current-point-x/y report correct position")
+    (assert-true test
+      (dash-ok?)
+      "set-dash / get-dash / get-dash-count / get-dash-offset round-trip")
+    (assert-true test (fill-extents-ok?) "fill-extents matches rectangle bounds")
+    (assert-true test
+      (stroke-extents-ok?)
+      "stroke-extents is wider than the path itself")
+    (assert-true test (path-extents-ok?) "path-extents matches path endpoints")
+    (assert-true test
+      (text-extents-ok?)
+      "text-extents reports positive width for non-empty string")
+    (assert-true test
+      (font-extents-ok?)
+      "font-extents reports positive ascent and height")
+    (assert-true test
+      (source-surface-ok?)
+      "set-source-surface + paint succeeds without error")))
