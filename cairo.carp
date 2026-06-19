@@ -4,12 +4,11 @@
 
 (posix-only (add-pkg "cairo"))
 
-;; Opaque handles
 (register-type CairoContext "cairo_t")
 (register-type CairoSurface "cairo_surface_t")
 (register-type CairoPattern "cairo_pattern_t")
 
-;; Enums (registered as distinct Carp types so constants don't collide with Int)
+; Registered as distinct Carp types so the constants don't collide with Int.
 (register-type CairoStatus "cairo_status_t")
 (register-type CairoFormat "cairo_format_t")
 (register-type CairoAntialias "cairo_antialias_t")
@@ -20,7 +19,6 @@
 (register-type CairoFontSlant "cairo_font_slant_t")
 (register-type CairoFontWeight "cairo_font_weight_t")
 
-;; Carp-side record types for multi-value query results
 (doc CairoExtents
   "Axis-aligned bounding box returned by `fill-extents`, `stroke-extents`, and `path-extents`.")
 (deftype CairoExtents [x1 Double
@@ -86,7 +84,6 @@ lifetimes for you. Every `Cairo.create` must be paired with a `Cairo.destroy`,
 and every `*-surface-create` with a `Cairo.surface-destroy`. See the [Cairo
 manual](https://www.cairographics.org/manual/) for details.")
 (defmodule Cairo
-  ;; --- Status ---
   (doc status-success "Success status code returned by most Cairo operations.")
   (register status-success CairoStatus "CAIRO_STATUS_SUCCESS")
   (register status-to-string
@@ -101,7 +98,6 @@ manual](https://www.cairographics.org/manual/) for details.")
   (doc success? "Returns `true` if the given status equals `status-success`.")
   (defn success? [s] (Cairo.= s status-success))
 
-  ;; --- Format ---
   (doc format-argb32
     "32-bit ARGB, native-endian. Matches `SDL_PIXELFORMAT_ARGB8888` on little-endian.")
   (register format-argb32 CairoFormat "CAIRO_FORMAT_ARGB32")
@@ -109,7 +105,6 @@ manual](https://www.cairographics.org/manual/) for details.")
   (register format-a8 CairoFormat "CAIRO_FORMAT_A8")
   (register format-a1 CairoFormat "CAIRO_FORMAT_A1")
 
-  ;; --- Antialias ---
   (register antialias-default CairoAntialias "CAIRO_ANTIALIAS_DEFAULT")
   (register antialias-none CairoAntialias "CAIRO_ANTIALIAS_NONE")
   (register antialias-gray CairoAntialias "CAIRO_ANTIALIAS_GRAY")
@@ -118,21 +113,17 @@ manual](https://www.cairographics.org/manual/) for details.")
   (register antialias-good CairoAntialias "CAIRO_ANTIALIAS_GOOD")
   (register antialias-best CairoAntialias "CAIRO_ANTIALIAS_BEST")
 
-  ;; --- Line cap ---
   (register line-cap-butt CairoLineCap "CAIRO_LINE_CAP_BUTT")
   (register line-cap-round CairoLineCap "CAIRO_LINE_CAP_ROUND")
   (register line-cap-square CairoLineCap "CAIRO_LINE_CAP_SQUARE")
 
-  ;; --- Line join ---
   (register line-join-miter CairoLineJoin "CAIRO_LINE_JOIN_MITER")
   (register line-join-round CairoLineJoin "CAIRO_LINE_JOIN_ROUND")
   (register line-join-bevel CairoLineJoin "CAIRO_LINE_JOIN_BEVEL")
 
-  ;; --- Fill rule ---
   (register fill-rule-winding CairoFillRule "CAIRO_FILL_RULE_WINDING")
   (register fill-rule-even-odd CairoFillRule "CAIRO_FILL_RULE_EVEN_ODD")
 
-  ;; --- Operators (compositing) ---
   (register operator-clear CairoOperator "CAIRO_OPERATOR_CLEAR")
   (register operator-source CairoOperator "CAIRO_OPERATOR_SOURCE")
   (register operator-over CairoOperator "CAIRO_OPERATOR_OVER")
@@ -149,14 +140,12 @@ manual](https://www.cairographics.org/manual/) for details.")
   (register operator-multiply CairoOperator "CAIRO_OPERATOR_MULTIPLY")
   (register operator-screen CairoOperator "CAIRO_OPERATOR_SCREEN")
 
-  ;; --- Font slant / weight ---
   (register slant-normal CairoFontSlant "CAIRO_FONT_SLANT_NORMAL")
   (register slant-italic CairoFontSlant "CAIRO_FONT_SLANT_ITALIC")
   (register slant-oblique CairoFontSlant "CAIRO_FONT_SLANT_OBLIQUE")
   (register weight-normal CairoFontWeight "CAIRO_FONT_WEIGHT_NORMAL")
   (register weight-bold CairoFontWeight "CAIRO_FONT_WEIGHT_BOLD")
 
-  ;; --- Surface creation ---
   (doc image-surface-create
     "Create an in-memory image surface of the given format, width, and height.")
   (register image-surface-create
@@ -173,7 +162,6 @@ manual](https://www.cairographics.org/manual/) for details.")
     (Fn [(Ptr CChar) Double Double] (Ptr CairoSurface))
     "cairo_svg_surface_create")
 
-  ;; --- Image surface accessors ---
   (doc image-surface-get-data
     "Return a raw pointer to the surface's pixel buffer. Must be preceded by `surface-flush`.")
   (register image-surface-get-data
@@ -189,7 +177,6 @@ manual](https://www.cairographics.org/manual/) for details.")
     (Fn [(Ptr CairoSurface)] Int)
     "cairo_image_surface_get_height")
 
-  ;; --- Surface lifecycle / IO ---
   (register surface-destroy (Fn [(Ptr CairoSurface)] ()) "cairo_surface_destroy")
   (doc surface-flush
     "Ensure pending drawing for the surface has been applied. Required before reading pixels directly.")
@@ -204,7 +191,6 @@ manual](https://www.cairographics.org/manual/) for details.")
     (Fn [(Ptr CairoSurface) (Ptr CChar)] CairoStatus)
     "cairo_surface_write_to_png")
 
-  ;; --- Context lifecycle ---
   (doc create
     "Create a drawing context targeting the given surface. Must be paired with `destroy`.")
   (register create (Fn [(Ptr CairoSurface)] (Ptr CairoContext)) "cairo_create")
@@ -215,7 +201,6 @@ manual](https://www.cairographics.org/manual/) for details.")
   (doc restore "Pop the top drawing state off the stack and make it current.")
   (register restore (Fn [(Ptr CairoContext)] ()) "cairo_restore")
 
-  ;; --- Transforms ---
   (register translate
     (Fn [(Ptr CairoContext) Double Double] ())
     "cairo_translate")
@@ -224,7 +209,6 @@ manual](https://www.cairographics.org/manual/) for details.")
   (register scale (Fn [(Ptr CairoContext) Double Double] ()) "cairo_scale")
   (register identity-matrix (Fn [(Ptr CairoContext)] ()) "cairo_identity_matrix")
 
-  ;; --- Path construction ---
   (register new-path (Fn [(Ptr CairoContext)] ()) "cairo_new_path")
   (register new-sub-path (Fn [(Ptr CairoContext)] ()) "cairo_new_sub_path")
   (register move-to (Fn [(Ptr CairoContext) Double Double] ()) "cairo_move_to")
@@ -256,7 +240,6 @@ manual](https://www.cairographics.org/manual/) for details.")
     "cairo_rectangle")
   (register close-path (Fn [(Ptr CairoContext)] ()) "cairo_close_path")
 
-  ;; --- Path queries ---
   (doc has-current-point?
     "Return `true` if the context has a current point (after `move-to` or drawing operations).")
   (deftemplate has-current-point?
@@ -276,7 +259,6 @@ manual](https://www.cairographics.org/manual/) for details.")
                "double $NAME(cairo_t *cr)"
                "$DECL { double x, y; cairo_get_current_point(cr, &x, &y); return y; }")
 
-  ;; --- Painting ---
   (register stroke (Fn [(Ptr CairoContext)] ()) "cairo_stroke")
   (register stroke-preserve (Fn [(Ptr CairoContext)] ()) "cairo_stroke_preserve")
   (register fill (Fn [(Ptr CairoContext)] ()) "cairo_fill")
@@ -291,7 +273,6 @@ manual](https://www.cairographics.org/manual/) for details.")
   (register clip-preserve (Fn [(Ptr CairoContext)] ()) "cairo_clip_preserve")
   (register reset-clip (Fn [(Ptr CairoContext)] ()) "cairo_reset_clip")
 
-  ;; --- Extents queries ---
   (doc fill-extents
     "Compute the bounding box of the area that would be affected by `fill`.")
   (deftemplate fill-extents
@@ -311,7 +292,6 @@ manual](https://www.cairographics.org/manual/) for details.")
                "CairoExtents $NAME(cairo_t *cr)"
                "$DECL { CairoExtents e; cairo_path_extents(cr, &e.x1, &e.y1, &e.x2, &e.y2); return e; }")
 
-  ;; --- Drawing state ---
   (register set-source-rgb
     (Fn [(Ptr CairoContext) Double Double Double] ())
     "cairo_set_source_rgb")
@@ -337,7 +317,6 @@ manual](https://www.cairographics.org/manual/) for details.")
     (Fn [(Ptr CairoContext) CairoFillRule] ())
     "cairo_set_fill_rule")
 
-  ;; --- Dash patterns ---
   (doc set-dash
     "Set the dash pattern. `dashes` is an array of on/off lengths; `offset` shifts the pattern start.")
   (deftemplate set-dash
@@ -359,14 +338,12 @@ manual](https://www.cairographics.org/manual/) for details.")
                "double $NAME(cairo_t *cr)"
                "$DECL { double offset; cairo_get_dash(cr, NULL, &offset); return offset; }")
 
-  ;; --- Source surface ---
   (doc set-source-surface
     "Set a surface as the source pattern, translated to `(x y)`.")
   (register set-source-surface
     (Fn [(Ptr CairoContext) (Ptr CairoSurface) Double Double] ())
     "cairo_set_source_surface")
 
-  ;; --- Text ---
   (doc select-font-face
     "Select a font face by family name, slant, and weight. Uses Cairo's built-in toy text API.")
   (register select-font-face
@@ -377,7 +354,6 @@ manual](https://www.cairographics.org/manual/) for details.")
     "cairo_set_font_size")
   (register show-text (Fn [(Ptr CairoContext) (Ptr CChar)] ()) "cairo_show_text")
 
-  ;; --- Text measurement ---
   (doc text-extents
     "Measure `text` and return a `CairoTextExtents` with bearing, size, and advance fields.")
   (deftemplate text-extents

@@ -3,7 +3,6 @@
 
 (use-all Test Cairo)
 
-;; Tiny file-existence helper used only in this test.
 (deftemplate file-exists?
              (Fn [(Ptr CChar)] Bool)
              "bool $NAME(const char* path)"
@@ -19,27 +18,22 @@
 
 (defn draw-test [cr]
   (do
-    ;; White background
     (set-source-rgb cr 1.0 1.0 1.0)
     (paint cr)
-    ;; Black diagonal stroke
     (set-source-rgb cr 0.0 0.0 0.0)
     (set-line-width cr 4.0)
     (set-line-cap cr line-cap-round)
     (move-to cr 20.0 20.0)
     (line-to cr 180.0 180.0)
     (stroke cr)
-    ;; Red filled rectangle
     (set-source-rgba cr 1.0 0.0 0.0 0.75)
     (rectangle cr 40.0 40.0 80.0 80.0)
     (fill cr)
-    ;; Cubic bezier
     (set-source-rgb cr 0.0 0.5 1.0)
     (set-line-width cr 2.0)
     (move-to cr 10.0 190.0)
     (curve-to cr 60.0 10.0 140.0 10.0 190.0 190.0)
     (stroke cr)
-    ;; An arc, at a translated/rotated origin, to exercise save/restore
     (save cr)
     (translate cr 100.0 100.0)
     (rotate cr 0.5)
@@ -47,9 +41,6 @@
     (arc cr 0.0 0.0 30.0 0.0 6.28319)
     (stroke cr)
     (restore cr)))
-
-;; Each helper runs one setup/draw/teardown cycle and returns a Bool so the
-;; assertions in main can stay flat.
 
 (defn write-png-ok? []
   (let-do [surf (image-surface-create format-argb32 200 200)
