@@ -186,6 +186,62 @@
       (surface-destroy surf)
       ok)))
 
+(defn linear-gradient-ok? []
+  (let-do [surf (image-surface-create format-argb32 100 100)
+           cr (create surf)
+           pat (pattern-create-linear 0.0 0.0 100.0 0.0)]
+    (pattern-add-color-stop-rgb pat 0.0 1.0 0.0 0.0)
+    (pattern-add-color-stop-rgb pat 1.0 0.0 0.0 1.0)
+    (set-source cr pat)
+    (paint cr)
+    (let-do [ok (and (success? (status cr)) (success? (pattern-status pat)))]
+      (pattern-destroy pat)
+      (destroy cr)
+      (surface-destroy surf)
+      ok)))
+
+(defn radial-gradient-ok? []
+  (let-do [surf (image-surface-create format-argb32 100 100)
+           cr (create surf)
+           pat (pattern-create-radial 50.0 50.0 10.0 50.0 50.0 50.0)]
+    (pattern-add-color-stop-rgba pat 0.0 1.0 1.0 0.0 1.0)
+    (pattern-add-color-stop-rgba pat 1.0 0.0 0.0 0.0 0.0)
+    (set-source cr pat)
+    (paint cr)
+    (let-do [ok (and (success? (status cr)) (success? (pattern-status pat)))]
+      (pattern-destroy pat)
+      (destroy cr)
+      (surface-destroy surf)
+      ok)))
+
+(defn surface-pattern-ok? []
+  (let-do [src (image-surface-create format-argb32 20 20)
+           pat (pattern-create-for-surface src)
+           surf (image-surface-create format-argb32 100 100)
+           cr (create surf)]
+    (set-source cr pat)
+    (paint cr)
+    (let-do [ok (and (success? (status cr)) (success? (pattern-status pat)))]
+      (pattern-destroy pat)
+      (destroy cr)
+      (surface-destroy surf)
+      (surface-destroy src)
+      ok)))
+
+(defn pattern-extend-ok? []
+  (let-do [pat (pattern-create-linear 0.0 0.0 10.0 0.0)]
+    (pattern-set-extend pat extend-repeat)
+    (let-do [ok true] (pattern-destroy pat) ok)))
+
+(defn pattern-filter-ok? []
+  (let-do [src (image-surface-create format-argb32 10 10)
+           pat (pattern-create-for-surface src)]
+    (pattern-set-filter pat filter-nearest)
+    (let-do [ok (success? (pattern-status pat))]
+      (pattern-destroy pat)
+      (surface-destroy src)
+      ok)))
+
 (defn main []
   (with-test test
     (assert-true test
@@ -224,4 +280,19 @@
       "font-extents reports positive ascent and height")
     (assert-true test
       (source-surface-ok?)
-      "set-source-surface + paint succeeds without error")))
+      "set-source-surface + paint succeeds without error")
+    (assert-true test
+      (linear-gradient-ok?)
+      "linear gradient: create, add stops, set-source, paint")
+    (assert-true test
+      (radial-gradient-ok?)
+      "radial gradient: create with rgba stops, paint")
+    (assert-true test
+      (surface-pattern-ok?)
+      "surface pattern: create-for-surface, set-source, paint")
+    (assert-true test
+      (pattern-extend-ok?)
+      "pattern-set-extend accepts extend-repeat")
+    (assert-true test
+      (pattern-filter-ok?)
+      "pattern-set-filter accepts filter-nearest")))

@@ -18,6 +18,8 @@
 (register-type CairoOperator "cairo_operator_t")
 (register-type CairoFontSlant "cairo_font_slant_t")
 (register-type CairoFontWeight "cairo_font_weight_t")
+(register-type CairoExtend "cairo_extend_t")
+(register-type CairoFilter "cairo_filter_t")
 
 (doc CairoExtents
   "Axis-aligned bounding box returned by `fill-extents`, `stroke-extents`, and `path-extents`.")
@@ -365,4 +367,70 @@ manual](https://www.cairographics.org/manual/) for details.")
   (deftemplate font-extents
                (Fn [(Ptr CairoContext)] CairoFontExtents)
                "CairoFontExtents $NAME(cairo_t *cr)"
-               "$DECL { cairo_font_extents_t cf; cairo_font_extents(cr, &cf); CairoFontExtents e; e.ascent = cf.ascent; e.descent = cf.descent; e.height = cf.height; e.max_MINUS_x_MINUS_advance = cf.max_x_advance; e.max_MINUS_y_MINUS_advance = cf.max_y_advance; return e; }"))
+               "$DECL { cairo_font_extents_t cf; cairo_font_extents(cr, &cf); CairoFontExtents e; e.ascent = cf.ascent; e.descent = cf.descent; e.height = cf.height; e.max_MINUS_x_MINUS_advance = cf.max_x_advance; e.max_MINUS_y_MINUS_advance = cf.max_y_advance; return e; }")
+
+  ; --- Pattern / gradient bindings ---
+
+  (register extend-none CairoExtend "CAIRO_EXTEND_NONE")
+  (register extend-repeat CairoExtend "CAIRO_EXTEND_REPEAT")
+  (register extend-reflect CairoExtend "CAIRO_EXTEND_REFLECT")
+  (register extend-pad CairoExtend "CAIRO_EXTEND_PAD")
+
+  (register filter-fast CairoFilter "CAIRO_FILTER_FAST")
+  (register filter-good CairoFilter "CAIRO_FILTER_GOOD")
+  (register filter-best CairoFilter "CAIRO_FILTER_BEST")
+  (register filter-nearest CairoFilter "CAIRO_FILTER_NEAREST")
+  (register filter-bilinear CairoFilter "CAIRO_FILTER_BILINEAR")
+
+  (doc pattern-create-linear
+    "Create a linear gradient pattern along the line from `(x0 y0)` to `(x1 y1)`.")
+  (register pattern-create-linear
+    (Fn [Double Double Double Double] (Ptr CairoPattern))
+    "cairo_pattern_create_linear")
+  (doc pattern-create-radial
+    "Create a radial gradient between two circles: center `(cx0 cy0)` radius `r0` and center `(cx1 cy1)` radius `r1`.")
+  (register pattern-create-radial
+    (Fn [Double Double Double Double Double Double] (Ptr CairoPattern))
+    "cairo_pattern_create_radial")
+  (doc pattern-create-for-surface
+    "Create a pattern from a surface, useful for tiling or compositing.")
+  (register pattern-create-for-surface
+    (Fn [(Ptr CairoSurface)] (Ptr CairoPattern))
+    "cairo_pattern_create_for_surface")
+
+  (doc pattern-add-color-stop-rgb
+    "Add an opaque color stop at `offset` (0.0–1.0) to a gradient pattern.")
+  (register pattern-add-color-stop-rgb
+    (Fn [(Ptr CairoPattern) Double Double Double Double] ())
+    "cairo_pattern_add_color_stop_rgb")
+  (doc pattern-add-color-stop-rgba
+    "Add a translucent color stop at `offset` (0.0–1.0) to a gradient pattern.")
+  (register pattern-add-color-stop-rgba
+    (Fn [(Ptr CairoPattern) Double Double Double Double Double] ())
+    "cairo_pattern_add_color_stop_rgba")
+
+  (doc set-source
+    "Set the pattern as the source for subsequent drawing operations.")
+  (register set-source
+    (Fn [(Ptr CairoContext) (Ptr CairoPattern)] ())
+    "cairo_set_source")
+
+  (register pattern-set-extend
+    (Fn [(Ptr CairoPattern) CairoExtend] ())
+    "cairo_pattern_set_extend")
+  (register pattern-get-extend
+    (Fn [(Ptr CairoPattern)] CairoExtend)
+    "cairo_pattern_get_extend")
+  (register pattern-set-filter
+    (Fn [(Ptr CairoPattern) CairoFilter] ())
+    "cairo_pattern_set_filter")
+  (register pattern-get-filter
+    (Fn [(Ptr CairoPattern)] CairoFilter)
+    "cairo_pattern_get_filter")
+
+  (register pattern-status
+    (Fn [(Ptr CairoPattern)] CairoStatus)
+    "cairo_pattern_status")
+  (doc pattern-destroy
+    "Destroy a pattern created by `pattern-create-*`. Must be called after the pattern is no longer needed.")
+  (register pattern-destroy (Fn [(Ptr CairoPattern)] ()) "cairo_pattern_destroy"))
