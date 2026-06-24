@@ -16,7 +16,7 @@ apt install libcairo2-dev # Debian / Ubuntu
 Then load the library:
 
 ```clojure
-(load "git@github.com:carpentry-org/cairo.carp@0.0.1")
+(load "git@github.com:carpentry-org/cairo.carp@0.2.0")
 ```
 
 (or by local path during development).

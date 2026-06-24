@@ -62,7 +62,7 @@ apt install libcairo2-dev # Debian / Ubuntu
 ## Example
 
 ```clojure
-(load \"git@github.com:carpentry-org/cairo.carp@0.1.0\")
+(load \"git@github.com:carpentry-org/cairo.carp@0.2.0\")
 
 (defn main []
   (let-do [surf (Cairo.image-surface-create Cairo.format-argb32 200 200)
