@@ -192,6 +192,11 @@ manual](https://www.cairographics.org/manual/) for details.")
   (register surface-write-to-png
     (Fn [(Ptr CairoSurface) (Ptr CChar)] CairoStatus)
     "cairo_surface_write_to_png")
+  (doc image-surface-create-from-png
+    "Load a PNG file into a new image surface. Must be paired with `surface-destroy`.")
+  (register image-surface-create-from-png
+    (Fn [(Ptr CChar)] (Ptr CairoSurface))
+    "cairo_image_surface_create_from_png")
 
   (doc create
     "Create a drawing context targeting the given surface. Must be paired with `destroy`.")
