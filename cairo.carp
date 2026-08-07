@@ -44,6 +44,22 @@
    height Double
    max-x-advance Double
    max-y-advance Double])
+(doc CairoMatrix
+  "An affine transformation, mapping `(x y)` to `(xx*x + xy*y + x0, yx*x + yy*y + y0)`.
+
+`(CairoMatrix.init xx yx xy yy x0 y0)` takes its arguments in the same order as
+`cairo_matrix_init`; the `matrix-init-*` functions build the common cases.")
+(deftype CairoMatrix
+  [xx Double
+   yx Double
+   xy Double
+   yy Double
+   x0 Double
+   y0 Double])
+(doc CairoPoint
+  "A coordinate pair, returned by the transformation and coordinate conversion functions.")
+(deftype CairoPoint [x Double
+                     y Double])
 
 (doc Cairo
   "Thin FFI bindings over the [Cairo 2D graphics library](https://www.cairographics.org/).
@@ -88,6 +104,9 @@ manual](https://www.cairographics.org/manual/) for details.")
 (defmodule Cairo
   (doc status-success "Success status code returned by most Cairo operations.")
   (register status-success CairoStatus "CAIRO_STATUS_SUCCESS")
+  (doc status-invalid-matrix
+    "Status returned by `matrix-invert` when the matrix is not invertible.")
+  (register status-invalid-matrix CairoStatus "CAIRO_STATUS_INVALID_MATRIX")
   (register status-to-string
     (Fn [CairoStatus] (Ptr CChar))
     "cairo_status_to_string")
@@ -210,6 +229,119 @@ manual](https://www.cairographics.org/manual/) for details.")
   (register rotate (Fn [(Ptr CairoContext) Double] ()) "cairo_rotate")
   (register scale (Fn [(Ptr CairoContext) Double Double] ()) "cairo_scale")
   (register identity-matrix (Fn [(Ptr CairoContext)] ()) "cairo_identity_matrix")
+
+  (doc matrix-init-identity "Return the identity matrix.")
+  (deftemplate matrix-init-identity
+               (Fn [] CairoMatrix)
+               "CairoMatrix $NAME()"
+               "$DECL { cairo_matrix_t cm; cairo_matrix_init_identity(&cm); CairoMatrix r = {.xx = cm.xx, .yx = cm.yx, .xy = cm.xy, .yy = cm.yy, .x0 = cm.x0, .y0 = cm.y0}; return r; }")
+  (doc matrix-init-translate "Return a matrix that translates by `(tx ty)`.")
+  (deftemplate matrix-init-translate
+               (Fn [Double Double] CairoMatrix)
+               "CairoMatrix $NAME(double tx, double ty)"
+               "$DECL { cairo_matrix_t cm; cairo_matrix_init_translate(&cm, tx, ty); CairoMatrix r = {.xx = cm.xx, .yx = cm.yx, .xy = cm.xy, .yy = cm.yy, .x0 = cm.x0, .y0 = cm.y0}; return r; }")
+  (doc matrix-init-scale
+    "Return a matrix that scales by `sx` in x and `sy` in y.")
+  (deftemplate matrix-init-scale
+               (Fn [Double Double] CairoMatrix)
+               "CairoMatrix $NAME(double sx, double sy)"
+               "$DECL { cairo_matrix_t cm; cairo_matrix_init_scale(&cm, sx, sy); CairoMatrix r = {.xx = cm.xx, .yx = cm.yx, .xy = cm.xy, .yy = cm.yy, .x0 = cm.x0, .y0 = cm.y0}; return r; }")
+  (doc matrix-init-rotate "Return a matrix that rotates by `radians`.")
+  (deftemplate matrix-init-rotate
+               (Fn [Double] CairoMatrix)
+               "CairoMatrix $NAME(double radians)"
+               "$DECL { cairo_matrix_t cm; cairo_matrix_init_rotate(&cm, radians); CairoMatrix r = {.xx = cm.xx, .yx = cm.yx, .xy = cm.xy, .yy = cm.yy, .x0 = cm.x0, .y0 = cm.y0}; return r; }")
+
+  (doc matrix-translate
+    "Return `m` with a translation by `(tx ty)` applied before it: points are translated, then transformed by `m`.")
+  (deftemplate matrix-translate
+               (Fn [(Ref CairoMatrix) Double Double] CairoMatrix)
+               "CairoMatrix $NAME(CairoMatrix *m, double tx, double ty)"
+               "$DECL { cairo_matrix_t cm = {.xx = m->xx, .yx = m->yx, .xy = m->xy, .yy = m->yy, .x0 = m->x0, .y0 = m->y0}; cairo_matrix_translate(&cm, tx, ty); CairoMatrix r = {.xx = cm.xx, .yx = cm.yx, .xy = cm.xy, .yy = cm.yy, .x0 = cm.x0, .y0 = cm.y0}; return r; }")
+  (doc matrix-scale
+    "Return `m` with a scale by `(sx sy)` applied before it: points are scaled, then transformed by `m`.")
+  (deftemplate matrix-scale
+               (Fn [(Ref CairoMatrix) Double Double] CairoMatrix)
+               "CairoMatrix $NAME(CairoMatrix *m, double sx, double sy)"
+               "$DECL { cairo_matrix_t cm = {.xx = m->xx, .yx = m->yx, .xy = m->xy, .yy = m->yy, .x0 = m->x0, .y0 = m->y0}; cairo_matrix_scale(&cm, sx, sy); CairoMatrix r = {.xx = cm.xx, .yx = cm.yx, .xy = cm.xy, .yy = cm.yy, .x0 = cm.x0, .y0 = cm.y0}; return r; }")
+  (doc matrix-rotate
+    "Return `m` with a rotation by `radians` applied before it: points are rotated, then transformed by `m`.")
+  (deftemplate matrix-rotate
+               (Fn [(Ref CairoMatrix) Double] CairoMatrix)
+               "CairoMatrix $NAME(CairoMatrix *m, double radians)"
+               "$DECL { cairo_matrix_t cm = {.xx = m->xx, .yx = m->yx, .xy = m->xy, .yy = m->yy, .x0 = m->x0, .y0 = m->y0}; cairo_matrix_rotate(&cm, radians); CairoMatrix r = {.xx = cm.xx, .yx = cm.yx, .xy = cm.xy, .yy = cm.yy, .x0 = cm.x0, .y0 = cm.y0}; return r; }")
+  (doc matrix-multiply "Return the matrix that applies `a` first, then `b`.")
+  (deftemplate matrix-multiply
+               (Fn [(Ref CairoMatrix) (Ref CairoMatrix)] CairoMatrix)
+               "CairoMatrix $NAME(CairoMatrix *a, CairoMatrix *b)"
+               "$DECL { cairo_matrix_t ca = {.xx = a->xx, .yx = a->yx, .xy = a->xy, .yy = a->yy, .x0 = a->x0, .y0 = a->y0}; cairo_matrix_t cb = {.xx = b->xx, .yx = b->yx, .xy = b->xy, .yy = b->yy, .x0 = b->x0, .y0 = b->y0}; cairo_matrix_t cm; cairo_matrix_multiply(&cm, &ca, &cb); CairoMatrix r = {.xx = cm.xx, .yx = cm.yx, .xy = cm.xy, .yy = cm.yy, .x0 = cm.x0, .y0 = cm.y0}; return r; }")
+
+  (private matrix-invert!)
+  (hidden matrix-invert!)
+  (deftemplate matrix-invert!
+               (Fn [(Ref CairoMatrix)] CairoStatus)
+               "cairo_status_t $NAME(CairoMatrix *m)"
+               "$DECL { cairo_matrix_t cm = {.xx = m->xx, .yx = m->yx, .xy = m->xy, .yy = m->yy, .x0 = m->x0, .y0 = m->y0}; cairo_status_t s = cairo_matrix_invert(&cm); if (s == CAIRO_STATUS_SUCCESS) { m->xx = cm.xx; m->yx = cm.yx; m->xy = cm.xy; m->yy = cm.yy; m->x0 = cm.x0; m->y0 = cm.y0; } return s; }")
+  (doc matrix-invert
+    "Invert `m`, or return `status-invalid-matrix` in the error branch if `m` is not invertible.")
+  (defn matrix-invert [m]
+    (let [inverted @m
+          s (matrix-invert! &inverted)]
+      (if (success? s) (Result.Success inverted) (Result.Error s))))
+
+  (doc matrix-transform-point "Transform the point `(x y)` by `m`.")
+  (deftemplate matrix-transform-point
+               (Fn [(Ref CairoMatrix) Double Double] CairoPoint)
+               "CairoPoint $NAME(CairoMatrix *m, double x, double y)"
+               "$DECL { cairo_matrix_t cm = {.xx = m->xx, .yx = m->yx, .xy = m->xy, .yy = m->yy, .x0 = m->x0, .y0 = m->y0}; cairo_matrix_transform_point(&cm, &x, &y); CairoPoint p = {.x = x, .y = y}; return p; }")
+  (doc matrix-transform-distance
+    "Transform the vector `(dx dy)` by `m`, ignoring translation. The components come back in the point's `x` and `y`.")
+  (deftemplate matrix-transform-distance
+               (Fn [(Ref CairoMatrix) Double Double] CairoPoint)
+               "CairoPoint $NAME(CairoMatrix *m, double dx, double dy)"
+               "$DECL { cairo_matrix_t cm = {.xx = m->xx, .yx = m->yx, .xy = m->xy, .yy = m->yy, .x0 = m->x0, .y0 = m->y0}; cairo_matrix_transform_distance(&cm, &dx, &dy); CairoPoint p = {.x = dx, .y = dy}; return p; }")
+
+  (doc set-matrix "Replace the context's transformation matrix with `m`.")
+  (deftemplate set-matrix
+               (Fn [(Ptr CairoContext) (Ref CairoMatrix)] ())
+               "void $NAME(cairo_t *cr, CairoMatrix *m)"
+               "$DECL { cairo_matrix_t cm = {.xx = m->xx, .yx = m->yx, .xy = m->xy, .yy = m->yy, .x0 = m->x0, .y0 = m->y0}; cairo_set_matrix(cr, &cm); }")
+  (doc get-matrix "Return the context's current transformation matrix.")
+  (deftemplate get-matrix
+               (Fn [(Ptr CairoContext)] CairoMatrix)
+               "CairoMatrix $NAME(cairo_t *cr)"
+               "$DECL { cairo_matrix_t cm; cairo_get_matrix(cr, &cm); CairoMatrix r = {.xx = cm.xx, .yx = cm.yx, .xy = cm.xy, .yy = cm.yy, .x0 = cm.x0, .y0 = cm.y0}; return r; }")
+  (doc transform
+    "Compose `m` onto the context's transformation, the way `translate` and `rotate` do.")
+  (deftemplate transform
+               (Fn [(Ptr CairoContext) (Ref CairoMatrix)] ())
+               "void $NAME(cairo_t *cr, CairoMatrix *m)"
+               "$DECL { cairo_matrix_t cm = {.xx = m->xx, .yx = m->yx, .xy = m->xy, .yy = m->yy, .x0 = m->x0, .y0 = m->y0}; cairo_transform(cr, &cm); }")
+
+  (doc user-to-device
+    "Convert the point `(x y)` from user space to device space.")
+  (deftemplate user-to-device
+               (Fn [(Ptr CairoContext) Double Double] CairoPoint)
+               "CairoPoint $NAME(cairo_t *cr, double x, double y)"
+               "$DECL { cairo_user_to_device(cr, &x, &y); CairoPoint p = {.x = x, .y = y}; return p; }")
+  (doc user-to-device-distance
+    "Convert the vector `(dx dy)` from user space to device space, ignoring translation.")
+  (deftemplate user-to-device-distance
+               (Fn [(Ptr CairoContext) Double Double] CairoPoint)
+               "CairoPoint $NAME(cairo_t *cr, double dx, double dy)"
+               "$DECL { cairo_user_to_device_distance(cr, &dx, &dy); CairoPoint p = {.x = dx, .y = dy}; return p; }")
+  (doc device-to-user
+    "Convert the point `(x y)` from device space to user space.")
+  (deftemplate device-to-user
+               (Fn [(Ptr CairoContext) Double Double] CairoPoint)
+               "CairoPoint $NAME(cairo_t *cr, double x, double y)"
+               "$DECL { cairo_device_to_user(cr, &x, &y); CairoPoint p = {.x = x, .y = y}; return p; }")
+  (doc device-to-user-distance
+    "Convert the vector `(dx dy)` from device space to user space, ignoring translation.")
+  (deftemplate device-to-user-distance
+               (Fn [(Ptr CairoContext) Double Double] CairoPoint)
+               "CairoPoint $NAME(cairo_t *cr, double dx, double dy)"
+               "$DECL { cairo_device_to_user_distance(cr, &dx, &dy); CairoPoint p = {.x = dx, .y = dy}; return p; }")
 
   (register new-path (Fn [(Ptr CairoContext)] ()) "cairo_new_path")
   (register new-sub-path (Fn [(Ptr CairoContext)] ()) "cairo_new_sub_path")
@@ -421,6 +553,18 @@ manual](https://www.cairographics.org/manual/) for details.")
   (register pattern-get-extend
     (Fn [(Ptr CairoPattern)] CairoExtend)
     "cairo_pattern_get_extend")
+  (doc pattern-set-matrix
+    "Set the pattern's matrix, which maps user space to pattern space — the inverse of how the pattern moves on the surface.")
+  (deftemplate pattern-set-matrix
+               (Fn [(Ptr CairoPattern) (Ref CairoMatrix)] ())
+               "void $NAME(cairo_pattern_t *pat, CairoMatrix *m)"
+               "$DECL { cairo_matrix_t cm = {.xx = m->xx, .yx = m->yx, .xy = m->xy, .yy = m->yy, .x0 = m->x0, .y0 = m->y0}; cairo_pattern_set_matrix(pat, &cm); }")
+  (doc pattern-get-matrix "Return the pattern's current matrix.")
+  (deftemplate pattern-get-matrix
+               (Fn [(Ptr CairoPattern)] CairoMatrix)
+               "CairoMatrix $NAME(cairo_pattern_t *pat)"
+               "$DECL { cairo_matrix_t cm; cairo_pattern_get_matrix(pat, &cm); CairoMatrix r = {.xx = cm.xx, .yx = cm.yx, .xy = cm.xy, .yy = cm.yy, .x0 = cm.x0, .y0 = cm.y0}; return r; }")
+
   (register pattern-set-filter
     (Fn [(Ptr CairoPattern) CairoFilter] ())
     "cairo_pattern_set_filter")

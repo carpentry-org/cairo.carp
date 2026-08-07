@@ -16,6 +16,25 @@
 (hidden out-svg)
 (def out-svg "cairo-test.svg")
 
+(private close?)
+(hidden close?)
+(defn close? [a b] (< (Double.abs (- a b)) 0.0001))
+
+(private matrix-is?)
+(hidden matrix-is?)
+(defn matrix-is? [m xx yx xy yy x0 y0]
+  (and (close? @(CairoMatrix.xx m) xx)
+       (close? @(CairoMatrix.yx m) yx)
+       (close? @(CairoMatrix.xy m) xy)
+       (close? @(CairoMatrix.yy m) yy)
+       (close? @(CairoMatrix.x0 m) x0)
+       (close? @(CairoMatrix.y0 m) y0)))
+
+(private point-is?)
+(hidden point-is?)
+(defn point-is? [p x y]
+  (and (close? @(CairoPoint.x p) x) (close? @(CairoPoint.y p) y)))
+
 (defn draw-test [cr]
   (do
     (set-source-rgb cr 1.0 1.0 1.0)
@@ -242,6 +261,142 @@
       (surface-destroy src)
       ok)))
 
+(defn matrix-init-ok? []
+  (and
+    (matrix-is? &(matrix-init-identity) 1.0 0.0 0.0 1.0 0.0 0.0)
+    (matrix-is? &(matrix-init-translate 3.0 4.0) 1.0 0.0 0.0 1.0 3.0 4.0)
+    (matrix-is? &(matrix-init-scale 2.0 5.0) 2.0 0.0 0.0 5.0 0.0 0.0)
+    (matrix-is? &(matrix-init-rotate (/ Double.pi 2.0)) 0.0 1.0 -1.0 0.0 0.0 0.0)
+    (matrix-is?
+      &(CairoMatrix.init 1.0 2.0 3.0 4.0 5.0 6.0)
+      1.0
+      2.0
+      3.0
+      4.0
+      5.0
+      6.0)))
+
+(defn matrix-compose-order-ok? []
+  (let [s (matrix-init-scale 2.0 3.0)
+        t (matrix-init-translate 10.0 20.0)]
+    (and
+      (matrix-is? &(matrix-translate &s 10.0 20.0) 2.0 0.0 0.0 3.0 20.0 60.0)
+      (matrix-is? &(matrix-scale &t 2.0 3.0) 2.0 0.0 0.0 3.0 10.0 20.0)
+      (matrix-is? &(matrix-rotate &s (/ Double.pi 2.0)) 0.0 3.0 -2.0 0.0 0.0 0.0)
+      (matrix-is? &(matrix-multiply &t &s) 2.0 0.0 0.0 3.0 20.0 60.0)
+      (matrix-is? &(matrix-multiply &s &t) 2.0 0.0 0.0 3.0 10.0 20.0))))
+
+(defn matrix-transform-ok? []
+  (let [m (matrix-translate &(matrix-init-scale 2.0 3.0) 10.0 20.0)
+        sheared (CairoMatrix.init 2.0 0.5 0.25 3.0 20.0 60.0)]
+    (and
+      (point-is? &(matrix-transform-point &m 0.0 0.0) 20.0 60.0)
+      (point-is? &(matrix-transform-point &m 1.0 1.0) 22.0 63.0)
+      (point-is? &(matrix-transform-distance &m 1.0 1.0) 2.0 3.0)
+      (point-is? &(matrix-transform-point &sheared 1.0 1.0) 22.25 63.5)
+      (point-is? &(matrix-transform-distance &sheared 1.0 1.0) 2.25 3.5))))
+
+(defn matrix-invert-ok? []
+  (let [m (CairoMatrix.init 2.0 0.5 0.25 3.0 20.0 60.0)]
+    (match (matrix-invert &m)
+      (Result.Error _) false
+      (Result.Success inv)
+        (and
+          (point-is? &(matrix-transform-point &m 7.0 11.0) 36.75 96.5)
+          (point-is? &(matrix-transform-point &inv 36.75 96.5) 7.0 11.0)
+          (matrix-is? &(matrix-multiply &m &inv) 1.0 0.0 0.0 1.0 0.0 0.0)))))
+
+(defn matrix-invert-singular-ok? []
+  (let [singular (matrix-init-scale 0.0 0.0)]
+    (match (matrix-invert &singular)
+      (Result.Success _) false
+      (Result.Error s) (Cairo.= s status-invalid-matrix))))
+
+(defn context-matrix-ok? []
+  (let-do [surf (image-surface-create format-argb32 100 100)
+           cr (create surf)
+           m (CairoMatrix.init 2.0 0.5 0.25 3.0 20.0 60.0)]
+    (set-matrix cr &m)
+    (let-do [got (get-matrix cr)
+             ok (matrix-is? &got 2.0 0.5 0.25 3.0 20.0 60.0)]
+      (destroy cr)
+      (surface-destroy surf)
+      ok)))
+
+(defn context-transform-ok? []
+  (let-do [surf (image-surface-create format-argb32 100 100)
+           built (create surf)
+           composed (create surf)]
+    (identity-matrix built)
+    (translate built 10.0 20.0)
+    (scale built 2.0 3.0)
+    (identity-matrix composed)
+    (transform composed &(matrix-init-translate 10.0 20.0))
+    (transform composed &(matrix-init-scale 2.0 3.0))
+    (let-do [expected (get-matrix built)
+             got (get-matrix composed)
+             ok (matrix-is? &got
+                            @(CairoMatrix.xx &expected)
+                            @(CairoMatrix.yx &expected)
+                            @(CairoMatrix.xy &expected)
+                            @(CairoMatrix.yy &expected)
+                            @(CairoMatrix.x0 &expected)
+                            @(CairoMatrix.y0 &expected))]
+      (destroy built)
+      (destroy composed)
+      (surface-destroy surf)
+      ok)))
+
+(defn user-device-ok? []
+  (let-do [surf (image-surface-create format-argb32 100 100)
+           cr (create surf)]
+    (translate cr 10.0 20.0)
+    (rotate cr 0.7)
+    (scale cr 2.0 3.0)
+    (let-do [ctm (get-matrix cr)
+             dev (user-to-device cr 5.0 7.0)
+             back (device-to-user cr @(CairoPoint.x &dev) @(CairoPoint.y &dev))
+             dist (user-to-device-distance cr 5.0 7.0)
+             back-dist (device-to-user-distance cr
+                                                @(CairoPoint.x &dist)
+                                                @(CairoPoint.y &dist))
+             origin (user-to-device cr 0.0 0.0)
+             ok (and (point-is? &back 5.0 7.0)
+                     (point-is? &back-dist 5.0 7.0)
+                     (point-is? &dev
+                                @(CairoPoint.x &(matrix-transform-point &ctm
+                                                                        5.0
+                                                                        7.0))
+                                @(CairoPoint.y &(matrix-transform-point &ctm
+                                                                        5.0
+                                                                        7.0)))
+                     (point-is? &dist
+                                (- @(CairoPoint.x &dev) @(CairoPoint.x &origin))
+                                (- @(CairoPoint.y &dev) @(CairoPoint.y &origin))))]
+      (destroy cr)
+      (surface-destroy surf)
+      ok)))
+
+(defn pattern-matrix-ok? []
+  (let-do [surf (image-surface-create format-argb32 100 100)
+           cr (create surf)
+           pat (pattern-create-linear 0.0 0.0 1.0 0.0)
+           m (CairoMatrix.init 0.01 0.002 0.003 0.02 0.1 0.2)]
+    (pattern-add-color-stop-rgb pat 0.0 1.0 0.0 0.0)
+    (pattern-add-color-stop-rgb pat 1.0 0.0 0.0 1.0)
+    (pattern-set-matrix pat &m)
+    (set-source cr pat)
+    (paint cr)
+    (let-do [got (pattern-get-matrix pat)
+             ok (and
+               (matrix-is? &got 0.01 0.002 0.003 0.02 0.1 0.2)
+               (success? (status cr))
+               (success? (pattern-status pat)))]
+      (pattern-destroy pat)
+      (destroy cr)
+      (surface-destroy surf)
+      ok)))
+
 (defn main []
   (with-test test
     (assert-true test
@@ -295,4 +450,31 @@
       "pattern-set-extend accepts extend-repeat")
     (assert-true test
       (pattern-filter-ok?)
-      "pattern-set-filter accepts filter-nearest")))
+      "pattern-set-filter accepts filter-nearest")
+    (assert-true test
+      (matrix-init-ok?)
+      "matrix-init-identity / -translate / -scale / -rotate match hand-computed coefficients")
+    (assert-true test
+      (matrix-compose-order-ok?)
+      "matrix-translate / -scale / -rotate / -multiply compose in Cairo's order")
+    (assert-true test
+      (matrix-transform-ok?)
+      "matrix-transform-point applies translation, matrix-transform-distance does not")
+    (assert-true test
+      (matrix-invert-ok?)
+      "matrix-invert round-trips a point and multiplies back to identity")
+    (assert-true test
+      (matrix-invert-singular-ok?)
+      "matrix-invert of a singular matrix errors with status-invalid-matrix")
+    (assert-true test
+      (context-matrix-ok?)
+      "get-matrix returns what set-matrix stored")
+    (assert-true test
+      (context-transform-ok?)
+      "transform composes the same matrix as translate followed by scale")
+    (assert-true test
+      (user-device-ok?)
+      "user-to-device and its distance variant agree with the CTM and invert cleanly")
+    (assert-true test
+      (pattern-matrix-ok?)
+      "gradient painted through pattern-set-matrix, matrix reads back")))

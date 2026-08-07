@@ -45,17 +45,19 @@ Then load the library:
 
 The binding currently covers the subset of Cairo that `anima.carp` needs, with some headroom:
 
-- **Surfaces:** image / PDF / SVG creation, flush, finish, destroy, write-to-PNG, accessors for the raw image pixel buffer.
+- **Surfaces:** image / PDF / SVG creation, flush, finish, destroy, status, write-to-PNG, accessors for the raw image pixel buffer.
 - **Contexts:** create, destroy, status, save / restore.
-- **Transforms:** translate, rotate, scale, identity-matrix.
-- **Paths:** new-path, new-sub-path, move-to, line-to, curve-to, the relative variants, arc, arc-negative, rectangle, close-path.
-- **Painting:** stroke, fill, their `-preserve` variants, paint, paint-with-alpha, clip, clip-preserve, reset-clip.
-- **State:** source RGB(A), line width / cap / join, operator, antialias, fill rule.
-- **Text:** `select-font-face`, `set-font-size`, `show-text` (Cairo's built-in toy text API).
+- **Transforms:** translate, rotate, scale, identity-matrix, `transform`, `set-matrix` / `get-matrix`, and user ↔ device coordinate conversion for both points and distances.
+- **Matrices:** `CairoMatrix` as a first-class value — identity / translate / scale / rotate constructors, the composing `matrix-translate` / `matrix-scale` / `matrix-rotate`, `matrix-multiply`, a `Result`-returning `matrix-invert`, and point / distance transformation.
+- **Paths:** new-path, new-sub-path, move-to, line-to, curve-to, the relative variants, arc, arc-negative, rectangle, close-path, current-point accessors.
+- **Painting:** stroke, fill, their `-preserve` variants, paint, paint-with-alpha, clip, clip-preserve, reset-clip, and fill / stroke / path extents.
+- **State:** source RGB(A), line width / cap / join, operator, antialias, fill rule, dash pattern.
+- **Patterns:** linear / radial / surface patterns, color stops, extend and filter modes, pattern matrices, `set-source` and `set-source-surface`.
+- **Text:** `select-font-face`, `set-font-size`, `show-text` (Cairo's built-in toy text API), plus `text-extents` and `font-extents` for measurement.
 
 Enums are exposed as distinct Carp types (`CairoFormat`, `CairoLineCap`, etc.) rather than raw `Int`, so type errors catch mix-ups at compile time.
 
-Not yet bound: patterns, matrices as first-class values, `set-dash`, `text-extents`, font extents, scaled fonts, Cairo's lower-level path introspection. Easy to add.
+Not yet bound: scaled fonts, glyph-level text, Cairo's lower-level path introspection (`cairo_copy_path` and friends), groups, masks, regions. Easy to add.
 
 ## Memory management
 
