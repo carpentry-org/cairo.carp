@@ -859,6 +859,11 @@
 (defn sans-face []
   (toy-font-face-create (cstr "sans") slant-normal weight-normal))
 
+(private glyphs-of)
+(hidden glyphs-of)
+(defn glyphs-of [sf x y text]
+  (Result.from-success (scaled-font-text-to-glyphs sf x y text) []))
+
 (private sans-scaled)
 (hidden sans-scaled)
 (defn sans-scaled [face size]
@@ -984,8 +989,7 @@
            cr (create surf)
            face (sans-face)
            sf (sans-scaled face 20.0)
-           gs (Result.unsafe-from-success
-             (scaled-font-text-to-glyphs sf 10.0 50.0 (cstr "Hi")))]
+           gs (glyphs-of sf 10.0 50.0 (cstr "Hi"))]
     (set-scaled-font cr sf)
     (let-do [from-context (glyph-extents cr &gs)
              from-font (scaled-font-glyph-extents sf &gs)
@@ -1004,8 +1008,7 @@
            cr (create surf)
            face (sans-face)
            sf (sans-scaled face 24.0)
-           gs (Result.unsafe-from-success
-             (scaled-font-text-to-glyphs sf 10.0 40.0 (cstr "Hi")))
+           gs (glyphs-of sf 10.0 40.0 (cstr "Hi"))
            blank (surface-ink surf)]
     (set-scaled-font cr sf)
     (set-source-rgb cr 0.0 0.0 0.0)
@@ -1041,8 +1044,7 @@
            cr (create surf)
            face (sans-face)
            sf (sans-scaled face 24.0)
-           gs (Result.unsafe-from-success
-             (scaled-font-text-to-glyphs sf 10.0 40.0 (cstr "Hi")))]
+           gs (glyphs-of sf 10.0 40.0 (cstr "Hi"))]
     (set-scaled-font cr sf)
     (set-source-rgb cr 0.0 0.0 0.0)
     (new-path cr)
