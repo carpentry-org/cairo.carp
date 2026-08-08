@@ -86,6 +86,11 @@
     (draw-test cr)
     (let-do [ok (success? (status cr))] (destroy cr) (surface-destroy surf) ok)))
 
+(defn status-to-string-ok? []
+  (let [ok (String.from-cstr (status-to-string status-success))
+        bad (String.from-cstr (status-to-string status-invalid-matrix))]
+    (and (not (String.empty? &ok)) (/= &ok &bad))))
+
 (defn write-svg-ok? []
   (let-do [svg (svg-surface-create (cstr out-svg) 100.0 100.0)
            cr (create svg)]
@@ -416,6 +421,9 @@
     (assert-true test
       (Cairo.= status-success status-success)
       "status equality is reflexive")
+    (assert-true test
+      (status-to-string-ok?)
+      "status-to-string returns a non-empty description that differs per status")
     (assert-true test
       (current-point-ok?)
       "has-current-point? / get-current-point-x/y report correct position")
