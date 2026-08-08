@@ -55,13 +55,16 @@ The binding currently covers the subset of Cairo that `anima.carp` needs, with s
 - **State:** source RGB(A), line width / cap / join, operator, antialias, fill rule, dash pattern.
 - **Patterns:** linear / radial / surface patterns, color stops, extend and filter modes, pattern matrices, `set-source` and `set-source-surface`.
 - **Text:** `select-font-face`, `set-font-size`, `show-text` (Cairo's built-in toy text API), plus `text-extents` and `font-extents` for measurement.
+- **Font faces:** `CairoFontFace` with `toy-font-face-create` and its family / slant / weight getters, `get-font-face` / `set-font-face`, status, and reference counting.
+- **Scaled fonts:** `CairoScaledFont` built from a face, a font matrix and a CTM, installed with `set-scaled-font` and read back with `get-scaled-font`, plus `scaled-font-extents` and `scaled-font-text-extents`.
+- **Glyphs:** `CairoGlyph` as a first-class value, `scaled-font-text-to-glyphs` to lay text out into positioned glyphs, `show-glyphs`, `glyph-path`, and `glyph-extents` / `scaled-font-glyph-extents`.
 - **Groups:** `push-group` / `push-group-with-content` redirect drawing to an offscreen surface, `pop-group` hands it back as a pattern and `pop-group-to-source` installs it as the source, and `get-group-target` reports where drawing currently goes.
 - **Masks:** `mask` paints the source through a pattern's alpha, `mask-surface` through a surface's.
 - **Regions:** `CairoRegion` with `CairoRectangleInt` as a first-class value — creation from one or many rectangles, `region-copy`, extents, rectangle enumeration, emptiness, point and rectangle containment, equality, translation, and the intersect / subtract / union / xor families in both their region and rectangle forms.
 
 Enums are exposed as distinct Carp types (`CairoFormat`, `CairoLineCap`, etc.) rather than raw `Int`, so type errors catch mix-ups at compile time.
 
-Not yet bound: scaled fonts, glyph-level text. Easy to add.
+Not yet bound: font options (`cairo_font_options_t`), font backends other than the toy API, text clusters (`cairo_show_text_glyphs`). Easy to add.
 
 ## Memory management
 
