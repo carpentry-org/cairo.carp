@@ -50,6 +50,7 @@ The binding currently covers the subset of Cairo that `anima.carp` needs, with s
 - **Transforms:** translate, rotate, scale, identity-matrix, `transform`, `set-matrix` / `get-matrix`, and user ↔ device coordinate conversion for both points and distances.
 - **Matrices:** `CairoMatrix` as a first-class value — identity / translate / scale / rotate constructors, the composing `matrix-translate` / `matrix-scale` / `matrix-rotate`, `matrix-multiply`, a `Result`-returning `matrix-invert`, and point / distance transformation.
 - **Paths:** new-path, new-sub-path, move-to, line-to, curve-to, the relative variants, arc, arc-negative, rectangle, close-path, current-point accessors.
+- **Path introspection:** `copy-path` and `copy-path-flat` read the current path back as an array of `CairoPathElement`s (`MoveTo`, `LineTo`, `CurveTo`, `ClosePath`), and `append-path` replays such an array onto a context.
 - **Painting:** stroke, fill, their `-preserve` variants, paint, paint-with-alpha, clip, clip-preserve, reset-clip, and fill / stroke / path extents.
 - **State:** source RGB(A), line width / cap / join, operator, antialias, fill rule, dash pattern.
 - **Patterns:** linear / radial / surface patterns, color stops, extend and filter modes, pattern matrices, `set-source` and `set-source-surface`.
@@ -57,7 +58,7 @@ The binding currently covers the subset of Cairo that `anima.carp` needs, with s
 
 Enums are exposed as distinct Carp types (`CairoFormat`, `CairoLineCap`, etc.) rather than raw `Int`, so type errors catch mix-ups at compile time.
 
-Not yet bound: scaled fonts, glyph-level text, Cairo's lower-level path introspection (`cairo_copy_path` and friends), groups, masks, regions. Easy to add.
+Not yet bound: scaled fonts, glyph-level text, groups, masks, regions. Easy to add.
 
 ## Memory management
 
