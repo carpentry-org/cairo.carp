@@ -71,6 +71,17 @@
       (surface-destroy surf)
       ok)))
 
+(defn read-png-ok? []
+  (let-do [surf (image-surface-create format-argb32 200 200)]
+    (ignore (surface-write-to-png surf (cstr out-png)))
+    (surface-destroy surf)
+    (let-do [loaded (image-surface-create-from-png (cstr out-png))
+             w (image-surface-get-width loaded)
+             h (image-surface-get-height loaded)
+             ok (and (= 200 w) (= 200 h))]
+      (surface-destroy loaded)
+      ok)))
+
 (defn surface-dims-ok? []
   (let-do [surf (image-surface-create format-argb32 200 200)
            w (image-surface-get-width surf)
@@ -408,6 +419,9 @@
       (write-png-ok?)
       "image surface draws and writes PNG with STATUS_SUCCESS")
     (assert-true test (file-exists? (cstr out-png)) "PNG file landed on disk")
+    (assert-true test
+      (read-png-ok?)
+      "image-surface-create-from-png reads back a written PNG at its original dimensions")
     (assert-true test
       (surface-dims-ok?)
       "image-surface-get-width / -height / -stride agree with creation")
