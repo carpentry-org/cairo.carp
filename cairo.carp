@@ -107,9 +107,12 @@ manual](https://www.cairographics.org/manual/) for details.")
   (doc status-invalid-matrix
     "Status returned by `matrix-invert` when the matrix is not invertible.")
   (register status-invalid-matrix CairoStatus "CAIRO_STATUS_INVALID_MATRIX")
-  (register status-to-string
-    (Fn [CairoStatus] (Ptr CChar))
-    "cairo_status_to_string")
+  (doc status-to-string
+    "Returns a human-readable description of the status code `s`.")
+  (deftemplate status-to-string
+               (Fn [CairoStatus] (Ptr CChar))
+               "CChar* $NAME(cairo_status_t s)"
+               "$DECL { return (CChar*)cairo_status_to_string(s); }")
 
   (doc = "Equality on status codes, implemented by converting to `Int` first.")
   (defn = [a b]
