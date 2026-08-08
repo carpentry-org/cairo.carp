@@ -35,6 +35,95 @@
 (defn point-is? [p x y]
   (and (close? @(CairoPoint.x p) x) (close? @(CairoPoint.y p) y)))
 
+(private point-str)
+(hidden point-str)
+(defn point-str [p] (fmt "%.3f,%.3f" @(CairoPoint.x p) @(CairoPoint.y p)))
+
+(private element-str)
+(hidden element-str)
+(defn element-str [e]
+  (match-ref e
+    (CairoPathElement.MoveTo p) (fmt "M %s" &(point-str p))
+    (CairoPathElement.LineTo p) (fmt "L %s" &(point-str p))
+    (CairoPathElement.CurveTo a b c)
+      (fmt "C %s %s %s" &(point-str a) &(point-str b) &(point-str c))
+    (CairoPathElement.ClosePath) @"Z"))
+
+(private path-str)
+(hidden path-str)
+(defn path-str [path]
+  (match-ref path
+    (Result.Error _) @"<error>"
+    (Result.Success elements)
+      (String.join " " &(Array.copy-map &element-str elements))))
+
+(private path-length)
+(hidden path-length)
+(defn path-length [path]
+  (match-ref path
+    (Result.Error _) -1
+    (Result.Success elements) (Array.length elements)))
+
+(private curve?)
+(hidden curve?)
+(defn curve? [e] (match-ref e (CairoPathElement.CurveTo _ _ _) true _ false))
+
+(private has-curve?)
+(hidden has-curve?)
+(defn has-curve? [path]
+  (match-ref path
+    (Result.Error _) false
+    (Result.Success elements) (Array.any? &curve? elements)))
+
+(defn draw-sample-path [cr]
+  (do
+    (move-to cr 10.0 20.0)
+    (line-to cr 30.0 40.0)
+    (curve-to cr 1.0 2.0 3.0 4.0 5.0 6.0)
+    (close-path cr)))
+
+(defn copied-sample-path []
+  (let-do [surf (image-surface-create format-argb32 100 100)
+           cr (create surf)]
+    (draw-sample-path cr)
+    (let-do [s (path-str &(copy-path cr))] (destroy cr) (surface-destroy surf) s)))
+
+(defn appended-sample-path []
+  (let-do [surf (image-surface-create format-argb32 100 100)
+           src (create surf)
+           dst (create surf)]
+    (draw-sample-path src)
+    (let-do [copied (copy-path src)
+             s (match-ref &copied
+               (Result.Error _) @"<error>"
+               (Result.Success elements)
+                 (do (append-path dst elements) (path-str &(copy-path dst))))]
+      (destroy src)
+      (destroy dst)
+      (surface-destroy surf)
+      s)))
+
+(defn flat-path-ok? []
+  (let-do [surf (image-surface-create format-argb32 100 100)
+           cr (create surf)]
+    (draw-sample-path cr)
+    (let-do [flat (copy-path-flat cr)
+             curved (copy-path cr)
+             ok (and (not (has-curve? &flat))
+                     (and (has-curve? &curved)
+                          (> (path-length &flat) (path-length &curved))))]
+      (destroy cr)
+      (surface-destroy surf)
+      ok)))
+
+(defn empty-path-length []
+  (let-do [surf (image-surface-create format-argb32 100 100)
+           cr (create surf)]
+    (let-do [n (path-length &(copy-path cr))]
+      (destroy cr)
+      (surface-destroy surf)
+      n)))
+
 (defn draw-test [cr]
   (do
     (set-source-rgb cr 1.0 1.0 1.0)
@@ -477,4 +566,19 @@
       "user-to-device and its distance variant agree with the CTM and invert cleanly")
     (assert-true test
       (pattern-matrix-ok?)
-      "gradient painted through pattern-set-matrix, matrix reads back")))
+      "gradient painted through pattern-set-matrix, matrix reads back")
+    (assert-equal test
+      "M 10.000,20.000 L 30.000,40.000 C 1.000,2.000 3.000,4.000 5.000,6.000 Z M 10.000,20.000"
+      &(copied-sample-path)
+      "copy-path reports every element and coordinate, including the move-to Cairo appends after close-path")
+    (assert-equal test
+      "M 10.000,20.000 L 30.000,40.000 C 1.000,2.000 3.000,4.000 5.000,6.000 Z M 10.000,20.000"
+      &(appended-sample-path)
+      "copy-path into append-path into a fresh context reproduces the element sequence")
+    (assert-true test
+      (flat-path-ok?)
+      "copy-path-flat replaces the curve with more line segments than the unflattened path has elements")
+    (assert-equal test
+      0
+      (empty-path-length)
+      "copy-path on a context with no path yields an empty array")))

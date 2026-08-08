@@ -7,6 +7,7 @@
 (register-type CairoContext "cairo_t")
 (register-type CairoSurface "cairo_surface_t")
 (register-type CairoPattern "cairo_pattern_t")
+(register-type CairoPath "cairo_path_t")
 
 ; Registered as distinct Carp types so the constants don't collide with Int.
 (register-type CairoStatus "cairo_status_t")
@@ -60,6 +61,17 @@
   "A coordinate pair, returned by the transformation and coordinate conversion functions.")
 (deftype CairoPoint [x Double
                      y Double])
+(doc CairoPathElement
+  "One portion of a path, as reported by `copy-path` and `copy-path-flat` and
+replayed by `append-path`.
+
+`CurveTo` carries the two control points of a cubic Bézier followed by its end
+point, in the same order `curve-to` takes them.")
+(deftype CairoPathElement
+  (MoveTo [CairoPoint])
+  (LineTo [CairoPoint])
+  (CurveTo [CairoPoint CairoPoint CairoPoint])
+  (ClosePath []))
 
 (doc Cairo
   "Thin FFI bindings over the [Cairo 2D graphics library](https://www.cairographics.org/).
@@ -577,4 +589,129 @@ manual](https://www.cairographics.org/manual/) for details.")
     "cairo_pattern_status")
   (doc pattern-destroy
     "Destroy a pattern created by `pattern-create-*`. Must be called after the pattern is no longer needed.")
-  (register pattern-destroy (Fn [(Ptr CairoPattern)] ()) "cairo_pattern_destroy"))
+  (register pattern-destroy (Fn [(Ptr CairoPattern)] ()) "cairo_pattern_destroy")
+
+  ; --- Path introspection ---
+
+  (private path-copy)
+  (hidden path-copy)
+  (register path-copy
+    (Fn [(Ptr CairoContext)] (Ptr CairoPath))
+    "cairo_copy_path")
+  (private path-copy-flat)
+  (hidden path-copy-flat)
+  (register path-copy-flat
+    (Fn [(Ptr CairoContext)] (Ptr CairoPath))
+    "cairo_copy_path_flat")
+  (private path-destroy)
+  (hidden path-destroy)
+  (register path-destroy (Fn [(Ptr CairoPath)] ()) "cairo_path_destroy")
+
+  (private path-move-to)
+  (hidden path-move-to)
+  (register path-move-to Int "CAIRO_PATH_MOVE_TO")
+  (private path-line-to)
+  (hidden path-line-to)
+  (register path-line-to Int "CAIRO_PATH_LINE_TO")
+  (private path-curve-to)
+  (hidden path-curve-to)
+  (register path-curve-to Int "CAIRO_PATH_CURVE_TO")
+
+  (private path-status)
+  (hidden path-status)
+  (deftemplate path-status
+               (Fn [(Ptr CairoPath)] CairoStatus)
+               "cairo_status_t $NAME(cairo_path_t *p)"
+               "$DECL { return p->status; }")
+  (private path-num-data)
+  (hidden path-num-data)
+  (deftemplate path-num-data
+               (Fn [(Ptr CairoPath)] Int)
+               "int $NAME(cairo_path_t *p)"
+               "$DECL { return p->num_data; }")
+  (private path-header-type)
+  (hidden path-header-type)
+  (deftemplate path-header-type
+               (Fn [(Ptr CairoPath) Int] Int)
+               "int $NAME(cairo_path_t *p, int i)"
+               "$DECL { return (int)p->data[i].header.type; }")
+  (private path-header-length)
+  (hidden path-header-length)
+  (deftemplate path-header-length
+               (Fn [(Ptr CairoPath) Int] Int)
+               "int $NAME(cairo_path_t *p, int i)"
+               "$DECL { return p->data[i].header.length; }")
+  (private path-point)
+  (hidden path-point)
+  (deftemplate path-point
+               (Fn [(Ptr CairoPath) Int] CairoPoint)
+               "CairoPoint $NAME(cairo_path_t *p, int i)"
+               "$DECL { CairoPoint r = {.x = p->data[i].point.x, .y = p->data[i].point.y}; return r; }")
+
+  (private path-element)
+  (hidden path-element)
+  (defn path-element [p i]
+    (let [kind (path-header-type p i)]
+      (cond
+        (Int.= kind path-move-to)
+          (CairoPathElement.MoveTo (path-point p (+ i 1)))
+        (Int.= kind path-line-to)
+          (CairoPathElement.LineTo (path-point p (+ i 1)))
+        (Int.= kind path-curve-to)
+          (CairoPathElement.CurveTo (path-point p (+ i 1))
+                                    (path-point p (+ i 2))
+                                    (path-point p (+ i 3)))
+        (CairoPathElement.ClosePath))))
+
+  (private path-elements)
+  (hidden path-elements)
+  (defn path-elements [p]
+    (let-do [n (path-num-data p)
+             elements []
+             i 0]
+      (while-do (< i n)
+        (Array.push-back! &elements (path-element p i))
+        (set! i (+ i (path-header-length p i))))
+      elements))
+
+  (private path-result)
+  (hidden path-result)
+  (defn path-result [p]
+    (let [s (path-status p)]
+      (if (success? s) (Result.Success (path-elements p)) (Result.Error s))))
+
+  (doc copy-path
+    "Return the current path as an array of `CairoPathElement`s, in user-space
+coordinates, or the context's error status in the error branch.
+
+Cairo reports a `close-path` as a `ClosePath` followed by a `MoveTo` back to the
+start of the closed subpath, which is where the current point ends up; both are
+surfaced as-is.")
+  (defn copy-path [cr]
+    (let-do [p (path-copy cr)
+             r (path-result p)] (path-destroy p) r))
+  (doc copy-path-flat
+    "Like `copy-path`, but with every curve approximated by a series of `LineTo`
+elements within tolerance. The result never contains a `CurveTo`.")
+  (defn copy-path-flat [cr]
+    (let-do [p (path-copy-flat cr)
+             r (path-result p)] (path-destroy p) r))
+  (doc append-path
+    "Append `elements` to the context's current path, interpreting their
+coordinates in the context's current user space.")
+  (defn append-path [cr elements]
+    (for [i 0 (Array.length elements)]
+      (match-ref (Array.unsafe-nth elements i)
+        (CairoPathElement.MoveTo p)
+          (move-to cr @(CairoPoint.x p) @(CairoPoint.y p))
+        (CairoPathElement.LineTo p)
+          (line-to cr @(CairoPoint.x p) @(CairoPoint.y p))
+        (CairoPathElement.CurveTo a b c)
+          (curve-to cr
+                    @(CairoPoint.x a)
+                    @(CairoPoint.y a)
+                    @(CairoPoint.x b)
+                    @(CairoPoint.y b)
+                    @(CairoPoint.x c)
+                    @(CairoPoint.y c))
+        (CairoPathElement.ClosePath) (close-path cr)))))
