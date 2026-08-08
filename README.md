@@ -68,7 +68,7 @@ Not yet bound: font options (`cairo_font_options_t`), font backends other than t
 
 ## Memory management
 
-Cairo uses reference counting internally; this binding does not manage lifetimes for you. Every `Cairo.create` must be paired with a `Cairo.destroy`, every `*-surface-create` with a `Cairo.surface-destroy`, and every `Cairo.region-create*` with a `Cairo.region-destroy`. `Cairo.pop-group` hands back a pattern that needs a `Cairo.pattern-destroy`, where `Cairo.pop-group-to-source` disposes of it for you. See the [Cairo manual](https://www.cairographics.org/manual/) for details.
+Cairo uses reference counting internally; this binding does not manage lifetimes for you. Every `Cairo.create` must be paired with a `Cairo.destroy`, every `*-surface-create` with a `Cairo.surface-destroy`, every `Cairo.toy-font-face-create` with a `Cairo.font-face-destroy`, every `Cairo.scaled-font-create` with a `Cairo.scaled-font-destroy`, and every `Cairo.region-create*` with a `Cairo.region-destroy`. `Cairo.font-face-reference` hands back a further reference, which needs a `Cairo.font-face-destroy` of its own. `Cairo.pop-group` hands back a pattern that needs a `Cairo.pattern-destroy`, where `Cairo.pop-group-to-source` disposes of it for you. See the [Cairo manual](https://www.cairographics.org/manual/) for details.
 
 ## Tests
 
