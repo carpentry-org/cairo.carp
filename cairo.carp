@@ -8,6 +8,7 @@
 (register-type CairoSurface "cairo_surface_t")
 (register-type CairoPattern "cairo_pattern_t")
 (register-type CairoPath "cairo_path_t")
+(register-type CairoRegion "cairo_region_t")
 
 ; Registered as distinct Carp types so the constants don't collide with Int.
 (register-type CairoStatus "cairo_status_t")
@@ -21,6 +22,8 @@
 (register-type CairoFontWeight "cairo_font_weight_t")
 (register-type CairoExtend "cairo_extend_t")
 (register-type CairoFilter "cairo_filter_t")
+(register-type CairoContent "cairo_content_t")
+(register-type CairoRegionOverlap "cairo_region_overlap_t")
 
 (doc CairoExtents
   "Axis-aligned bounding box returned by `fill-extents`, `stroke-extents`, and `path-extents`.")
@@ -61,6 +64,13 @@
   "A coordinate pair, returned by the transformation and coordinate conversion functions.")
 (deftype CairoPoint [x Double
                      y Double])
+(doc CairoRectangleInt
+  "An axis-aligned rectangle in integer device-space coordinates, as used
+throughout the region API.")
+(deftype CairoRectangleInt [x Int
+                            y Int
+                            width Int
+                            height Int])
 (doc CairoPathElement
   "One portion of a path, as reported by `copy-path` and `copy-path-flat` and
 replayed by `append-path`.
@@ -111,7 +121,10 @@ apt install libcairo2-dev # Debian / Ubuntu
 
 Cairo uses reference counting internally; this binding does not manage
 lifetimes for you. Every `Cairo.create` must be paired with a `Cairo.destroy`,
-and every `*-surface-create` with a `Cairo.surface-destroy`. See the [Cairo
+every `*-surface-create` with a `Cairo.surface-destroy`, and every
+`Cairo.region-create*` with a `Cairo.region-destroy`. `Cairo.pop-group` hands
+back a pattern that needs a `Cairo.pattern-destroy`, where
+`Cairo.pop-group-to-source` disposes of it for you. See the [Cairo
 manual](https://www.cairographics.org/manual/) for details.")
 (defmodule Cairo
   (doc status-success "Success status code returned by most Cairo operations.")
@@ -722,4 +735,192 @@ coordinates in the context's current user space.")
                     @(CairoPoint.y b)
                     @(CairoPoint.x c)
                     @(CairoPoint.y c))
-        (CairoPathElement.ClosePath) (close-path cr)))))
+        (CairoPathElement.ClosePath) (close-path cr))))
+
+  ; --- Groups ---
+
+  (register content-color CairoContent "CAIRO_CONTENT_COLOR")
+  (register content-alpha CairoContent "CAIRO_CONTENT_ALPHA")
+  (register content-color-alpha CairoContent "CAIRO_CONTENT_COLOR_ALPHA")
+
+  (doc push-group
+    "Redirect drawing into an intermediate group surface, so that a whole
+sequence of operations can be composited onto the target as a unit. Pairs with
+`pop-group` or `pop-group-to-source`, and saves the drawing state the way `save`
+does.")
+  (register push-group (Fn [(Ptr CairoContext)] ()) "cairo_push_group")
+  (doc push-group-with-content
+    "Like `push-group`, but with the group surface's content type chosen
+explicitly instead of inferred from the target.")
+  (register push-group-with-content
+    (Fn [(Ptr CairoContext) CairoContent] ())
+    "cairo_push_group_with_content")
+  (doc pop-group
+    "End the innermost group and return it as a pattern, restoring the state
+`push-group` saved. The pattern must be freed with `pattern-destroy`.")
+  (register pop-group
+    (Fn [(Ptr CairoContext)] (Ptr CairoPattern))
+    "cairo_pop_group")
+  (doc pop-group-to-source
+    "End the innermost group and install it as the source, as `pop-group`
+followed by `set-source` and `pattern-destroy` would.")
+  (register pop-group-to-source
+    (Fn [(Ptr CairoContext)] ())
+    "cairo_pop_group_to_source")
+  (doc get-group-target
+    "Return the surface drawing currently goes to: the innermost group's surface,
+or the context's target if no group is active. It is owned by the context and
+must not be destroyed.")
+  (register get-group-target
+    (Fn [(Ptr CairoContext)] (Ptr CairoSurface))
+    "cairo_get_group_target")
+
+  ; --- Masks ---
+
+  (doc mask "Paint the current source through the alpha channel of `pattern`.")
+  (register mask (Fn [(Ptr CairoContext) (Ptr CairoPattern)] ()) "cairo_mask")
+  (doc mask-surface
+    "Paint the current source through the alpha channel of `surface`, with the
+surface's origin placed at `(x y)` in user space.")
+  (register mask-surface
+    (Fn [(Ptr CairoContext) (Ptr CairoSurface) Double Double] ())
+    "cairo_mask_surface")
+
+  ; --- Regions ---
+
+  (register region-overlap-in CairoRegionOverlap "CAIRO_REGION_OVERLAP_IN")
+  (register region-overlap-out CairoRegionOverlap "CAIRO_REGION_OVERLAP_OUT")
+  (register region-overlap-part CairoRegionOverlap "CAIRO_REGION_OVERLAP_PART")
+
+  (doc region-create
+    "Create an empty region. Must be paired with `region-destroy`.")
+  (register region-create (Fn [] (Ptr CairoRegion)) "cairo_region_create")
+  (doc region-create-rectangle "Create a region containing `rect`.")
+  (deftemplate region-create-rectangle
+               (Fn [(Ref CairoRectangleInt)] (Ptr CairoRegion))
+               "cairo_region_t* $NAME(CairoRectangleInt *r)"
+               "$DECL { cairo_rectangle_int_t cr = {.x = r->x, .y = r->y, .width = r->width, .height = r->height}; return cairo_region_create_rectangle(&cr); }")
+  (doc region-create-rectangles "Create a region covering the union of `rects`.")
+  (deftemplate region-create-rectangles
+               (Fn [(Ref (Array CairoRectangleInt))] (Ptr CairoRegion))
+               "cairo_region_t* $NAME(Array *rects)"
+               "$DECL { int n = rects->len; cairo_rectangle_int_t *cs = NULL; if (n > 0) { cs = CARP_MALLOC(n * sizeof(cairo_rectangle_int_t)); CairoRectangleInt *src = (CairoRectangleInt*)rects->data; for (int i = 0; i < n; i++) { cs[i].x = src[i].x; cs[i].y = src[i].y; cs[i].width = src[i].width; cs[i].height = src[i].height; } } cairo_region_t *r = cairo_region_create_rectangles(cs, n); if (cs) CARP_FREE(cs); return r; }")
+  (doc region-copy
+    "Create an independent copy of `reg`, which must be destroyed separately.")
+  (register region-copy
+    (Fn [(Ptr CairoRegion)] (Ptr CairoRegion))
+    "cairo_region_copy")
+  (register region-destroy (Fn [(Ptr CairoRegion)] ()) "cairo_region_destroy")
+  (register region-status
+    (Fn [(Ptr CairoRegion)] CairoStatus)
+    "cairo_region_status")
+
+  (doc region-get-extents
+    "Return the bounding box of `reg`, or a zero-sized rectangle if it is empty.")
+  (deftemplate region-get-extents
+               (Fn [(Ptr CairoRegion)] CairoRectangleInt)
+               "CairoRectangleInt $NAME(cairo_region_t *reg)"
+               "$DECL { cairo_rectangle_int_t cr; cairo_region_get_extents(reg, &cr); CairoRectangleInt r = {.x = cr.x, .y = cr.y, .width = cr.width, .height = cr.height}; return r; }")
+  (doc region-num-rectangles
+    "Return how many non-overlapping rectangles `reg` decomposes into.")
+  (register region-num-rectangles
+    (Fn [(Ptr CairoRegion)] Int)
+    "cairo_region_num_rectangles")
+
+  (private region-rectangle-at)
+  (hidden region-rectangle-at)
+  (deftemplate region-rectangle-at
+               (Fn [(Ptr CairoRegion) Int] CairoRectangleInt)
+               "CairoRectangleInt $NAME(cairo_region_t *reg, int nth)"
+               "$DECL { cairo_rectangle_int_t cr; cairo_region_get_rectangle(reg, nth, &cr); CairoRectangleInt r = {.x = cr.x, .y = cr.y, .width = cr.width, .height = cr.height}; return r; }")
+  (doc region-get-rectangle
+    "Return the `nth` rectangle of `reg`, or `Nothing` if `nth` is out of range.")
+  (defn region-get-rectangle [reg nth]
+    (if (and (>= nth 0) (< nth (region-num-rectangles reg)))
+      (Maybe.Just (region-rectangle-at reg nth))
+      (Maybe.Nothing)))
+
+  (doc region-empty? "Return `true` if `reg` covers nothing.")
+  (deftemplate region-empty?
+               (Fn [(Ptr CairoRegion)] Bool)
+               "bool $NAME(cairo_region_t *reg)"
+               "$DECL { return (bool)cairo_region_is_empty(reg); }")
+  (doc region-contains-point?
+    "Return `true` if the device-space point `(x y)` lies inside `reg`.")
+  (deftemplate region-contains-point?
+               (Fn [(Ptr CairoRegion) Int Int] Bool)
+               "bool $NAME(cairo_region_t *reg, int x, int y)"
+               "$DECL { return (bool)cairo_region_contains_point(reg, x, y); }")
+  (doc region-contains-rectangle
+    "Report whether `rect` is entirely inside `reg` (`region-overlap-in`),
+entirely outside it (`region-overlap-out`), or straddles its edge
+(`region-overlap-part`).")
+  (deftemplate region-contains-rectangle
+               (Fn
+                 [(Ptr CairoRegion) (Ref CairoRectangleInt)]
+                 CairoRegionOverlap)
+               "cairo_region_overlap_t $NAME(cairo_region_t *reg, CairoRectangleInt *r)"
+               "$DECL { cairo_rectangle_int_t cr = {.x = r->x, .y = r->y, .width = r->width, .height = r->height}; return cairo_region_contains_rectangle(reg, &cr); }")
+  (doc region-equal? "Return `true` if `a` and `b` cover the same area.")
+  (deftemplate region-equal?
+               (Fn [(Ptr CairoRegion) (Ptr CairoRegion)] Bool)
+               "bool $NAME(cairo_region_t *a, cairo_region_t *b)"
+               "$DECL { return (bool)cairo_region_equal(a, b); }")
+  (doc region-translate "Move `reg` by `(dx dy)` in device space.")
+  (register region-translate
+    (Fn [(Ptr CairoRegion) Int Int] ())
+    "cairo_region_translate")
+
+  (doc region-intersect
+    "Reduce `reg` to its intersection with `other`, returning a `CairoStatus`.")
+  (register region-intersect
+    (Fn [(Ptr CairoRegion) (Ptr CairoRegion)] CairoStatus)
+    "cairo_region_intersect")
+  (doc region-intersect-rectangle
+    "Reduce `reg` to its intersection with `rect`, returning a `CairoStatus`.")
+  (deftemplate region-intersect-rectangle
+               (Fn [(Ptr CairoRegion) (Ref CairoRectangleInt)] CairoStatus)
+               "cairo_status_t $NAME(cairo_region_t *reg, CairoRectangleInt *r)"
+               "$DECL { cairo_rectangle_int_t cr = {.x = r->x, .y = r->y, .width = r->width, .height = r->height}; return cairo_region_intersect_rectangle(reg, &cr); }")
+  (doc region-subtract "Subtract `other` from `reg`, returning a `CairoStatus`.")
+  (register region-subtract
+    (Fn [(Ptr CairoRegion) (Ptr CairoRegion)] CairoStatus)
+    "cairo_region_subtract")
+  (doc region-subtract-rectangle
+    "Subtract `rect` from `reg`, returning a `CairoStatus`.")
+  (deftemplate region-subtract-rectangle
+               (Fn [(Ptr CairoRegion) (Ref CairoRectangleInt)] CairoStatus)
+               "cairo_status_t $NAME(cairo_region_t *reg, CairoRectangleInt *r)"
+               "$DECL { cairo_rectangle_int_t cr = {.x = r->x, .y = r->y, .width = r->width, .height = r->height}; return cairo_region_subtract_rectangle(reg, &cr); }")
+  (doc region-union
+    "Grow `reg` to also cover `other`, returning a `CairoStatus`.")
+  (register region-union
+    (Fn [(Ptr CairoRegion) (Ptr CairoRegion)] CairoStatus)
+    "cairo_region_union")
+  (doc region-union-rectangle
+    "Grow `reg` to also cover `rect`, returning a `CairoStatus`.")
+  (deftemplate region-union-rectangle
+               (Fn [(Ptr CairoRegion) (Ref CairoRectangleInt)] CairoStatus)
+               "cairo_status_t $NAME(cairo_region_t *reg, CairoRectangleInt *r)"
+               "$DECL { cairo_rectangle_int_t cr = {.x = r->x, .y = r->y, .width = r->width, .height = r->height}; return cairo_region_union_rectangle(reg, &cr); }")
+  (doc region-xor
+    "Reduce `reg` to the area covered by exactly one of `reg` and `other`,
+returning a `CairoStatus`.")
+  (register region-xor
+    (Fn [(Ptr CairoRegion) (Ptr CairoRegion)] CairoStatus)
+    "cairo_region_xor")
+  (doc region-xor-rectangle
+    "Reduce `reg` to the area covered by exactly one of `reg` and `rect`,
+returning a `CairoStatus`.")
+  (deftemplate region-xor-rectangle
+               (Fn [(Ptr CairoRegion) (Ref CairoRectangleInt)] CairoStatus)
+               "cairo_status_t $NAME(cairo_region_t *reg, CairoRectangleInt *r)"
+               "$DECL { cairo_rectangle_int_t cr = {.x = r->x, .y = r->y, .width = r->width, .height = r->height}; return cairo_region_xor_rectangle(reg, &cr); }"))
+
+(defmodule CairoRegionOverlap
+  (doc =
+    "Equality on region overlap values, implemented by converting to `Int` first.")
+  (defn = [a b]
+    (Int.= (enum-to-int (the CairoRegionOverlap a))
+           (enum-to-int (the CairoRegionOverlap b))))
+  (implements = CairoRegionOverlap.=))
