@@ -55,14 +55,17 @@ The binding currently covers the subset of Cairo that `anima.carp` needs, with s
 - **State:** source RGB(A), line width / cap / join, operator, antialias, fill rule, dash pattern.
 - **Patterns:** linear / radial / surface patterns, color stops, extend and filter modes, pattern matrices, `set-source` and `set-source-surface`.
 - **Text:** `select-font-face`, `set-font-size`, `show-text` (Cairo's built-in toy text API), plus `text-extents` and `font-extents` for measurement.
+- **Groups:** `push-group` / `push-group-with-content` redirect drawing to an offscreen surface, `pop-group` hands it back as a pattern and `pop-group-to-source` installs it as the source, and `get-group-target` reports where drawing currently goes.
+- **Masks:** `mask` paints the source through a pattern's alpha, `mask-surface` through a surface's.
+- **Regions:** `CairoRegion` with `CairoRectangleInt` as a first-class value — creation from one or many rectangles, `region-copy`, extents, rectangle enumeration, emptiness, point and rectangle containment, equality, translation, and the intersect / subtract / union / xor families in both their region and rectangle forms.
 
 Enums are exposed as distinct Carp types (`CairoFormat`, `CairoLineCap`, etc.) rather than raw `Int`, so type errors catch mix-ups at compile time.
 
-Not yet bound: scaled fonts, glyph-level text, groups, masks, regions. Easy to add.
+Not yet bound: scaled fonts, glyph-level text. Easy to add.
 
 ## Memory management
 
-Cairo uses reference counting internally; this binding does not manage lifetimes for you. Every `Cairo.create` must be paired with a `Cairo.destroy`, and every `*-surface-create` with a `Cairo.surface-destroy`. See the [Cairo manual](https://www.cairographics.org/manual/) for details.
+Cairo uses reference counting internally; this binding does not manage lifetimes for you. Every `Cairo.create` must be paired with a `Cairo.destroy`, every `*-surface-create` with a `Cairo.surface-destroy`, and every `Cairo.region-create*` with a `Cairo.region-destroy`. `Cairo.pop-group` hands back a pattern that needs a `Cairo.pattern-destroy`, where `Cairo.pop-group-to-source` disposes of it for you. See the [Cairo manual](https://www.cairographics.org/manual/) for details.
 
 ## Tests
 

@@ -39,6 +39,48 @@
 (hidden point-str)
 (defn point-str [p] (fmt "%.3f,%.3f" @(CairoPoint.x p) @(CairoPoint.y p)))
 
+(private near?)
+(hidden near?)
+(defn near? [a b] (< (Int.abs (- a b)) 4))
+
+(private green-at)
+(hidden green-at)
+(deftemplate green-at
+             (Fn [(Ptr CairoSurface) Int Int] Int)
+             "int $NAME(cairo_surface_t *surf, int x, int y)"
+             "$DECL { cairo_surface_flush(surf); uint32_t p = *(uint32_t*)(cairo_image_surface_get_data(surf) + y * cairo_image_surface_get_stride(surf) + x * 4); return (int)((p >> 8) & 0xff); }")
+
+(private rect-str)
+(hidden rect-str)
+(defn rect-str [r]
+  (fmt "%d,%d %dx%d"
+       @(CairoRectangleInt.x r)
+       @(CairoRectangleInt.y r)
+       @(CairoRectangleInt.width r)
+       @(CairoRectangleInt.height r)))
+
+(private maybe-rect-str)
+(hidden maybe-rect-str)
+(defn maybe-rect-str [m]
+  (match-ref m (Maybe.Just r) (rect-str r) (Maybe.Nothing) @"none"))
+
+(private region-str)
+(hidden region-str)
+(defn region-str [reg]
+  (let-do [parts []]
+    (for [i 0 (region-num-rectangles reg)]
+      (Array.push-back! &parts (maybe-rect-str &(region-get-rectangle reg i))))
+    (String.join " | " &parts)))
+
+(private overlap-str)
+(hidden overlap-str)
+(defn overlap-str [o]
+  (cond
+    (CairoRegionOverlap.= o region-overlap-in) @"in"
+    (CairoRegionOverlap.= o region-overlap-out) @"out"
+    (CairoRegionOverlap.= o region-overlap-part) @"part"
+    @"?"))
+
 (private element-str)
 (hidden element-str)
 (defn element-str [e]
@@ -502,6 +544,287 @@
       (surface-destroy surf)
       ok)))
 
+(private overlapping-squares)
+(hidden overlapping-squares)
+(defn overlapping-squares [cr alpha]
+  (do
+    (set-source-rgba cr 1.0 0.0 0.0 alpha)
+    (rectangle cr 0.0 0.0 16.0 16.0)
+    (fill cr)
+    (set-source-rgba cr 0.0 0.0 1.0 alpha)
+    (rectangle cr 8.0 0.0 16.0 16.0)
+    (fill cr)))
+
+(private grouped-squares-green)
+(hidden grouped-squares-green)
+(defn grouped-squares-green [x]
+  (let-do [surf (image-surface-create format-argb32 24 16)
+           cr (create surf)]
+    (set-source-rgb cr 1.0 1.0 1.0)
+    (paint cr)
+    (push-group cr)
+    (overlapping-squares cr 1.0)
+    (pop-group-to-source cr)
+    (paint-with-alpha cr 0.5)
+    (let-do [g (green-at surf x 8)] (destroy cr) (surface-destroy surf) g)))
+
+(private flat-squares-green)
+(hidden flat-squares-green)
+(defn flat-squares-green [x]
+  (let-do [surf (image-surface-create format-argb32 24 16)
+           cr (create surf)]
+    (set-source-rgb cr 1.0 1.0 1.0)
+    (paint cr)
+    (overlapping-squares cr 0.5)
+    (let-do [g (green-at surf x 8)] (destroy cr) (surface-destroy surf) g)))
+
+(defn group-alpha-ok? []
+  (and (near? (grouped-squares-green 12) 127)
+       (near? (flat-squares-green 12) 63)
+       (near? (grouped-squares-green 4) (flat-squares-green 4))))
+
+(defn pop-group-source-ok? []
+  (let-do [surf (image-surface-create format-argb32 20 20)
+           cr (create surf)]
+    (set-source-rgb cr 1.0 1.0 1.0)
+    (paint cr)
+    (push-group cr)
+    (set-source-rgb cr 1.0 0.0 0.0)
+    (rectangle cr 0.0 0.0 10.0 20.0)
+    (fill cr)
+    (let-do [pat (pop-group cr)]
+      (set-source cr pat)
+      (paint cr)
+      (let-do [ok (and (near? (green-at surf 2 10) 0)
+                       (near? (green-at surf 15 10) 255)
+                       (success? (pattern-status pat)))]
+        (pattern-destroy pat)
+        (destroy cr)
+        (surface-destroy surf)
+        ok))))
+
+(defn group-target-ok? []
+  (let-do [surf (image-surface-create format-argb32 20 20)
+           cr (create surf)
+           outside (Pointer.eq (get-group-target cr) surf)]
+    (push-group cr)
+    (let-do [inside (Pointer.eq (get-group-target cr) surf)
+             pat (pop-group cr)
+             after (Pointer.eq (get-group-target cr) surf)
+             ok (and outside (not inside) after)]
+      (pattern-destroy pat)
+      (destroy cr)
+      (surface-destroy surf)
+      ok)))
+
+(defn alpha-group-mask-ok? []
+  (let-do [surf (image-surface-create format-argb32 20 20)
+           cr (create surf)]
+    (set-source-rgb cr 1.0 1.0 1.0)
+    (paint cr)
+    (push-group-with-content cr content-alpha)
+    (set-source-rgba cr 0.0 0.0 0.0 1.0)
+    (rectangle cr 0.0 0.0 10.0 20.0)
+    (fill cr)
+    (let-do [pat (pop-group cr)]
+      (set-source-rgb cr 0.0 0.6 0.0)
+      (mask cr pat)
+      (let-do [ok (and (near? (green-at surf 2 10) 153)
+                       (near? (green-at surf 15 10) 255)
+                       (success? (status cr)))]
+        (pattern-destroy pat)
+        (destroy cr)
+        (surface-destroy surf)
+        ok))))
+
+(defn mask-gradient-ok? []
+  (let-do [surf (image-surface-create format-argb32 20 20)
+           cr (create surf)
+           pat (pattern-create-linear 0.0 0.0 20.0 0.0)]
+    (set-source-rgb cr 1.0 1.0 1.0)
+    (paint cr)
+    (pattern-add-color-stop-rgba pat 0.0 0.0 0.0 0.0 0.0)
+    (pattern-add-color-stop-rgba pat 1.0 0.0 0.0 0.0 1.0)
+    (set-source-rgb cr 1.0 0.0 0.0)
+    (mask cr pat)
+    (let-do [left (green-at surf 1 10)
+             middle (green-at surf 10 10)
+             right (green-at surf 18 10)
+             ok (and (> left 220) (near? middle 121) (< right 40))]
+      (pattern-destroy pat)
+      (destroy cr)
+      (surface-destroy surf)
+      ok)))
+
+(defn mask-surface-ok? []
+  (let-do [surf (image-surface-create format-argb32 20 20)
+           cr (create surf)
+           stencil (image-surface-create format-a8 20 20)
+           sc (create stencil)]
+    (set-source-rgba sc 0.0 0.0 0.0 1.0)
+    (rectangle sc 0.0 0.0 10.0 20.0)
+    (fill sc)
+    (destroy sc)
+    (set-source-rgb cr 1.0 1.0 1.0)
+    (paint cr)
+    (set-source-rgb cr 1.0 0.0 0.0)
+    (mask-surface cr stencil 0.0 0.0)
+    (let-do [ok (and (near? (green-at surf 2 10) 0)
+                     (near? (green-at surf 15 10) 255)
+                     (success? (status cr)))]
+      (surface-destroy stencil)
+      (destroy cr)
+      (surface-destroy surf)
+      ok)))
+
+(defn region-rectangle-str []
+  (let-do [reg (region-create-rectangle &(CairoRectangleInt.init 10 20 30 40))
+           s (fmt "%s / %s / %s"
+                  &(region-str reg)
+                  &(rect-str &(region-get-extents reg))
+                  &(maybe-rect-str &(region-get-rectangle reg 0)))]
+    (region-destroy reg)
+    s))
+
+(defn region-empty-ok? []
+  (let-do [reg (region-create)
+           extents (region-get-extents reg)
+           ok (and (region-empty? reg)
+                   (= 0 (region-num-rectangles reg))
+                   (= "0,0 0x0" &(rect-str &extents))
+                   (Maybe.nothing? &(region-get-rectangle reg 0))
+                   (success? (region-status reg)))]
+    (region-destroy reg)
+    ok))
+
+(defn region-index-bounds-ok? []
+  (let-do [reg (region-create-rectangle &(CairoRectangleInt.init 0 0 10 10))
+           ok (and
+             (Maybe.just? &(region-get-rectangle reg 0))
+             (Maybe.nothing? &(region-get-rectangle reg 1))
+             (Maybe.nothing? &(region-get-rectangle reg -1)))]
+    (region-destroy reg)
+    ok))
+
+(defn region-points-ok? []
+  (let-do [reg (region-create-rectangle &(CairoRectangleInt.init 10 20 30 40))
+           ok (and (region-contains-point? reg 10 20)
+                   (region-contains-point? reg 39 59)
+                   (not (region-contains-point? reg 40 60))
+                   (not (region-contains-point? reg 0 0)))]
+    (region-destroy reg)
+    ok))
+
+(defn region-overlaps-str []
+  (let-do [reg (region-create-rectangle &(CairoRectangleInt.init 0 0 20 20))
+           s (fmt "%s %s %s"
+                  &(overlap-str
+                    (region-contains-rectangle reg
+                                               &(CairoRectangleInt.init 5 5 5 5)))
+                  &(overlap-str
+                    (region-contains-rectangle reg
+                                               &(CairoRectangleInt.init 30
+                                                                        30
+                                                                        5
+                                                                        5)))
+                  &(overlap-str
+                    (region-contains-rectangle reg
+                                               &(CairoRectangleInt.init 15
+                                                                        15
+                                                                        10
+                                                                        10))))]
+    (region-destroy reg)
+    s))
+
+(defn region-rectangles-str []
+  (let-do [rects [(CairoRectangleInt.init 0 0 10 10)
+                  (CairoRectangleInt.init 20 0 10 10)]
+           reg (region-create-rectangles &rects)
+           s (fmt "%s / %s"
+                  &(region-str reg)
+                  &(rect-str &(region-get-extents reg)))]
+    (region-destroy reg)
+    s))
+
+(defn region-union-str []
+  (let-do [reg (region-create-rectangle &(CairoRectangleInt.init 0 0 10 10))
+           other (region-create-rectangle &(CairoRectangleInt.init 20 0 10 10))
+           status (region-union reg other)
+           s (fmt "%s %s" &(str (success? status)) &(region-str reg))]
+    (region-destroy other)
+    (region-destroy reg)
+    s))
+
+(defn region-intersect-str []
+  (let-do [reg (region-create-rectangle &(CairoRectangleInt.init 0 0 10 10))
+           status (region-intersect-rectangle reg
+                                              &(CairoRectangleInt.init 5 5 10 10))
+           s (fmt "%s %s" &(str (success? status)) &(region-str reg))]
+    (region-destroy reg)
+    s))
+
+(defn region-subtract-str []
+  (let-do [reg (region-create-rectangle &(CairoRectangleInt.init 0 0 10 10))
+           status (region-subtract-rectangle reg
+                                             &(CairoRectangleInt.init 0 0 10 4))
+           s (fmt "%s %s" &(str (success? status)) &(region-str reg))]
+    (region-destroy reg)
+    s))
+
+(defn region-xor-str []
+  (let-do [reg (region-create-rectangle &(CairoRectangleInt.init 0 0 10 10))
+           status (region-xor-rectangle reg &(CairoRectangleInt.init 0 0 10 4))
+           s (fmt "%s %s" &(str (success? status)) &(region-str reg))]
+    (region-destroy reg)
+    s))
+
+(defn region-union-rect-str []
+  (let-do [reg (region-create-rectangle &(CairoRectangleInt.init 0 0 10 10))
+           status (region-union-rectangle reg
+                                          &(CairoRectangleInt.init 20 0 10 10))
+           s (fmt "%s %s" &(str (success? status)) &(region-str reg))]
+    (region-destroy reg)
+    s))
+
+(defn region-intersect-region-str []
+  (let-do [reg (region-create-rectangle &(CairoRectangleInt.init 0 0 10 10))
+           other (region-create-rectangle &(CairoRectangleInt.init 5 5 10 10))
+           status (region-intersect reg other)
+           s (fmt "%s %s" &(str (success? status)) &(region-str reg))]
+    (region-destroy other)
+    (region-destroy reg)
+    s))
+
+(defn region-subtract-region-str []
+  (let-do [reg (region-create-rectangle &(CairoRectangleInt.init 0 0 10 10))
+           other (region-create-rectangle &(CairoRectangleInt.init 0 0 10 4))
+           status (region-subtract reg other)
+           s (fmt "%s %s" &(str (success? status)) &(region-str reg))]
+    (region-destroy other)
+    (region-destroy reg)
+    s))
+
+(defn region-xor-region-str []
+  (let-do [reg (region-create-rectangle &(CairoRectangleInt.init 0 0 10 10))
+           other (region-create-rectangle &(CairoRectangleInt.init 0 0 10 4))
+           status (region-xor reg other)
+           s (fmt "%s %s" &(str (success? status)) &(region-str reg))]
+    (region-destroy other)
+    (region-destroy reg)
+    s))
+
+(defn region-copy-translate-ok? []
+  (let-do [reg (region-create-rectangle &(CairoRectangleInt.init 0 0 10 10))
+           dup (region-copy reg)
+           same (region-equal? reg dup)]
+    (region-translate dup 5 5)
+    (let-do [moved (region-equal? reg dup)]
+      (region-translate dup -5 -5)
+      (let-do [ok (and same (not moved) (region-equal? reg dup))]
+        (region-destroy dup)
+        (region-destroy reg)
+        ok))))
+
 (defn main []
   (with-test test
     (assert-true test
@@ -603,4 +926,78 @@
     (assert-equal test
       0
       (empty-path-length)
-      "copy-path on a context with no path yields an empty array")))
+      "copy-path on a context with no path yields an empty array")
+    (assert-true test
+      (group-alpha-ok?)
+      "push-group composites its whole subtree at 50% once, where painting each piece at 50% double-blends the overlap")
+    (assert-true test
+      (pop-group-source-ok?)
+      "pop-group hands back a pattern that paints the group's contents where they were drawn")
+    (assert-true test
+      (group-target-ok?)
+      "get-group-target is the context target outside a group and the group surface inside one")
+    (assert-true test
+      (alpha-group-mask-ok?)
+      "an alpha-content group used as a mask paints the source only where the group was drawn")
+    (assert-true test
+      (mask-gradient-ok?)
+      "mask paints the source through a gradient's alpha, fading across the surface")
+    (assert-true test
+      (mask-surface-ok?)
+      "mask-surface paints the source through an A8 surface's alpha")
+    (assert-equal test
+      "10,20 30x40 / 10,20 30x40 / 10,20 30x40"
+      &(region-rectangle-str)
+      "region-create-rectangle yields one rectangle, and extents agree with it")
+    (assert-true test
+      (region-empty-ok?)
+      "a fresh region is empty, has no rectangles, and reports zero extents")
+    (assert-true test
+      (region-index-bounds-ok?)
+      "region-get-rectangle returns Nothing for indices outside the rectangle count")
+    (assert-true test
+      (region-points-ok?)
+      "region-contains-point? includes the top-left corner and excludes the bottom-right")
+    (assert-equal test
+      "in out part"
+      &(region-overlaps-str)
+      "region-contains-rectangle distinguishes contained, disjoint, and straddling rectangles")
+    (assert-equal test
+      "0,0 10x10 | 20,0 10x10 / 0,0 30x10"
+      &(region-rectangles-str)
+      "region-create-rectangles keeps disjoint rectangles apart under joint extents")
+    (assert-equal test
+      "true 0,0 10x10 | 20,0 10x10"
+      &(region-union-str)
+      "region-union adds a disjoint region as a second rectangle")
+    (assert-equal test
+      "true 5,5 5x5"
+      &(region-intersect-str)
+      "region-intersect-rectangle clips the region to the overlap")
+    (assert-equal test
+      "true 0,4 10x6"
+      &(region-subtract-str)
+      "region-subtract-rectangle removes the covered band")
+    (assert-equal test
+      "true 0,4 10x6"
+      &(region-xor-str)
+      "region-xor-rectangle with a fully contained rectangle behaves like subtraction")
+    (assert-equal test
+      "true 0,0 10x10 | 20,0 10x10"
+      &(region-union-rect-str)
+      "region-union-rectangle agrees with region-union")
+    (assert-equal test
+      "true 5,5 5x5"
+      &(region-intersect-region-str)
+      "region-intersect agrees with region-intersect-rectangle")
+    (assert-equal test
+      "true 0,4 10x6"
+      &(region-subtract-region-str)
+      "region-subtract agrees with region-subtract-rectangle")
+    (assert-equal test
+      "true 0,4 10x6"
+      &(region-xor-region-str)
+      "region-xor agrees with region-xor-rectangle")
+    (assert-true test
+      (region-copy-translate-ok?)
+      "region-copy equals its original, and region-translate round-trips")))
