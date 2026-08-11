@@ -9,6 +9,8 @@
 (register-type CairoPattern "cairo_pattern_t")
 (register-type CairoPath "cairo_path_t")
 (register-type CairoRegion "cairo_region_t")
+(register-type CairoFontFace "cairo_font_face_t")
+(register-type CairoScaledFont "cairo_scaled_font_t")
 
 ; Registered as distinct Carp types so the constants don't collide with Int.
 (register-type CairoStatus "cairo_status_t")
@@ -82,6 +84,15 @@ point, in the same order `curve-to` takes them.")
   (LineTo [CairoPoint])
   (CurveTo [CairoPoint CairoPoint CairoPoint])
   (ClosePath []))
+(doc CairoGlyph
+  "A glyph placed in user space: `index` identifies the glyph within its font,
+`x` and `y` position its origin.
+
+Glyph indices are font-specific — obtain them from `scaled-font-text-to-glyphs`
+rather than assuming a character encoding.")
+(deftype CairoGlyph [index Long
+                     x Double
+                     y Double])
 
 (doc Cairo
   "Thin FFI bindings over the [Cairo 2D graphics library](https://www.cairographics.org/).
@@ -533,6 +544,142 @@ manual](https://www.cairographics.org/manual/) for details.")
                (Fn [(Ptr CairoContext)] CairoFontExtents)
                "CairoFontExtents $NAME(cairo_t *cr)"
                "$DECL { cairo_font_extents_t cf; cairo_font_extents(cr, &cf); CairoFontExtents e; e.ascent = cf.ascent; e.descent = cf.descent; e.height = cf.height; e.max_MINUS_x_MINUS_advance = cf.max_x_advance; e.max_MINUS_y_MINUS_advance = cf.max_y_advance; return e; }")
+
+  ; --- Font faces ---
+
+  (doc get-font-face
+    "Return the context's current font face. The context keeps ownership; take a `font-face-reference` to hold on to it past the next `set-font-face`.")
+  (register get-font-face
+    (Fn [(Ptr CairoContext)] (Ptr CairoFontFace))
+    "cairo_get_font_face")
+  (doc set-font-face "Use `face` for subsequent text operations on the context.")
+  (register set-font-face
+    (Fn [(Ptr CairoContext) (Ptr CairoFontFace)] ())
+    "cairo_set_font_face")
+  (register font-face-status
+    (Fn [(Ptr CairoFontFace)] CairoStatus)
+    "cairo_font_face_status")
+  (doc font-face-destroy
+    "Drop a reference to a font face. Pairs with `toy-font-face-create` and `font-face-reference`.")
+  (register font-face-destroy
+    (Fn [(Ptr CairoFontFace)] ())
+    "cairo_font_face_destroy")
+  (doc font-face-reference
+    "Take an additional reference to a font face and return it. Each reference needs its own `font-face-destroy`.")
+  (register font-face-reference
+    (Fn [(Ptr CairoFontFace)] (Ptr CairoFontFace))
+    "cairo_font_face_reference")
+
+  (doc toy-font-face-create
+    "Create a font face from the family / slant / weight triple `select-font-face` takes, without installing it on a context. Must be paired with `font-face-destroy`.")
+  (register toy-font-face-create
+    (Fn [(Ptr CChar) CairoFontSlant CairoFontWeight] (Ptr CairoFontFace))
+    "cairo_toy_font_face_create")
+  (doc toy-font-face-get-family
+    "Return the family name of a toy font face. The string belongs to the face and dies with it.")
+  (deftemplate toy-font-face-get-family
+               (Fn [(Ptr CairoFontFace)] (Ptr CChar))
+               "CChar* $NAME(cairo_font_face_t *f)"
+               "$DECL { return (CChar*)cairo_toy_font_face_get_family(f); }")
+  (register toy-font-face-get-slant
+    (Fn [(Ptr CairoFontFace)] CairoFontSlant)
+    "cairo_toy_font_face_get_slant")
+  (register toy-font-face-get-weight
+    (Fn [(Ptr CairoFontFace)] CairoFontWeight)
+    "cairo_toy_font_face_get_weight")
+
+  ; --- Scaled fonts ---
+
+  (doc scaled-font-create
+    "Scale `face` by the font matrix `fm` — usually `(matrix-init-scale size size)` — under the transformation `ctm`, using Cairo's default font options. Must be paired with `scaled-font-destroy`.")
+  (deftemplate scaled-font-create
+               (Fn
+                 [(Ptr CairoFontFace) (Ref CairoMatrix) (Ref CairoMatrix)]
+                 (Ptr CairoScaledFont))
+               "cairo_scaled_font_t* $NAME(cairo_font_face_t *f, CairoMatrix *fm, CairoMatrix *ctm)"
+               "$DECL { cairo_matrix_t cfm = {.xx = fm->xx, .yx = fm->yx, .xy = fm->xy, .yy = fm->yy, .x0 = fm->x0, .y0 = fm->y0}; cairo_matrix_t cctm = {.xx = ctm->xx, .yx = ctm->yx, .xy = ctm->xy, .yy = ctm->yy, .x0 = ctm->x0, .y0 = ctm->y0}; cairo_font_options_t *o = cairo_font_options_create(); cairo_scaled_font_t *sf = cairo_scaled_font_create(f, &cfm, &cctm, o); cairo_font_options_destroy(o); return sf; }")
+  (doc scaled-font-destroy
+    "Drop a reference to a scaled font. Pairs with `scaled-font-create`.")
+  (register scaled-font-destroy
+    (Fn [(Ptr CairoScaledFont)] ())
+    "cairo_scaled_font_destroy")
+  (register scaled-font-status
+    (Fn [(Ptr CairoScaledFont)] CairoStatus)
+    "cairo_scaled_font_status")
+  (doc get-scaled-font
+    "Return the scaled font the context would use for text right now, combining its font face, size, and transformation. The context keeps ownership.")
+  (register get-scaled-font
+    (Fn [(Ptr CairoContext)] (Ptr CairoScaledFont))
+    "cairo_get_scaled_font")
+  (doc set-scaled-font
+    "Use `sf` for subsequent text operations, replacing the context's font face, size, and font matrix.")
+  (register set-scaled-font
+    (Fn [(Ptr CairoContext) (Ptr CairoScaledFont)] ())
+    "cairo_set_scaled_font")
+  (doc scaled-font-extents
+    "Return the metrics of a scaled font, the way `font-extents` does for a context's current font.")
+  (deftemplate scaled-font-extents
+               (Fn [(Ptr CairoScaledFont)] CairoFontExtents)
+               "CairoFontExtents $NAME(cairo_scaled_font_t *sf)"
+               "$DECL { cairo_font_extents_t cf; cairo_scaled_font_extents(sf, &cf); CairoFontExtents e; e.ascent = cf.ascent; e.descent = cf.descent; e.height = cf.height; e.max_MINUS_x_MINUS_advance = cf.max_x_advance; e.max_MINUS_y_MINUS_advance = cf.max_y_advance; return e; }")
+  (doc scaled-font-text-extents
+    "Measure `text` in a scaled font, the way `text-extents` does for a context's current font.")
+  (deftemplate scaled-font-text-extents
+               (Fn [(Ptr CairoScaledFont) (Ptr CChar)] CairoTextExtents)
+               "CairoTextExtents $NAME(cairo_scaled_font_t *sf, const char *text)"
+               "$DECL { cairo_text_extents_t ct; cairo_scaled_font_text_extents(sf, text, &ct); CairoTextExtents e; e.x_MINUS_bearing = ct.x_bearing; e.y_MINUS_bearing = ct.y_bearing; e.width = ct.width; e.height = ct.height; e.x_MINUS_advance = ct.x_advance; e.y_MINUS_advance = ct.y_advance; return e; }")
+
+  ; --- Glyphs ---
+
+  (doc show-glyphs
+    "Draw `glyphs` with the current source, leaving the current point after the last one.")
+  (deftemplate show-glyphs
+               (Fn [(Ptr CairoContext) (Ref (Array CairoGlyph))] ())
+               "void $NAME(cairo_t *cr, Array *glyphs)"
+               "$DECL { int n = glyphs->len; cairo_glyph_t *g = cairo_glyph_allocate(n); CairoGlyph *src = (CairoGlyph*)glyphs->data; for (int i = 0; i < n; i++) { g[i].index = (unsigned long)src[i].index; g[i].x = src[i].x; g[i].y = src[i].y; } cairo_show_glyphs(cr, g, n); cairo_glyph_free(g); }")
+  (doc glyph-path
+    "Append the outlines of `glyphs` to the current path, so they can be filled, stroked, or clipped with.")
+  (deftemplate glyph-path
+               (Fn [(Ptr CairoContext) (Ref (Array CairoGlyph))] ())
+               "void $NAME(cairo_t *cr, Array *glyphs)"
+               "$DECL { int n = glyphs->len; cairo_glyph_t *g = cairo_glyph_allocate(n); CairoGlyph *src = (CairoGlyph*)glyphs->data; for (int i = 0; i < n; i++) { g[i].index = (unsigned long)src[i].index; g[i].x = src[i].x; g[i].y = src[i].y; } cairo_glyph_path(cr, g, n); cairo_glyph_free(g); }")
+  (doc glyph-extents
+    "Measure `glyphs` in the context's current font. Bearings and advances are relative to the first glyph's origin.")
+  (deftemplate glyph-extents
+               (Fn
+                 [(Ptr CairoContext) (Ref (Array CairoGlyph))]
+                 CairoTextExtents)
+               "CairoTextExtents $NAME(cairo_t *cr, Array *glyphs)"
+               "$DECL { int n = glyphs->len; cairo_glyph_t *g = cairo_glyph_allocate(n); CairoGlyph *src = (CairoGlyph*)glyphs->data; for (int i = 0; i < n; i++) { g[i].index = (unsigned long)src[i].index; g[i].x = src[i].x; g[i].y = src[i].y; } cairo_text_extents_t ct; cairo_glyph_extents(cr, g, n, &ct); cairo_glyph_free(g); CairoTextExtents e; e.x_MINUS_bearing = ct.x_bearing; e.y_MINUS_bearing = ct.y_bearing; e.width = ct.width; e.height = ct.height; e.x_MINUS_advance = ct.x_advance; e.y_MINUS_advance = ct.y_advance; return e; }")
+  (doc scaled-font-glyph-extents
+    "Measure `glyphs` in a scaled font, without needing a context.")
+  (deftemplate scaled-font-glyph-extents
+               (Fn
+                 [(Ptr CairoScaledFont) (Ref (Array CairoGlyph))]
+                 CairoTextExtents)
+               "CairoTextExtents $NAME(cairo_scaled_font_t *sf, Array *glyphs)"
+               "$DECL { int n = glyphs->len; cairo_glyph_t *g = cairo_glyph_allocate(n); CairoGlyph *src = (CairoGlyph*)glyphs->data; for (int i = 0; i < n; i++) { g[i].index = (unsigned long)src[i].index; g[i].x = src[i].x; g[i].y = src[i].y; } cairo_text_extents_t ct; cairo_scaled_font_glyph_extents(sf, g, n, &ct); cairo_glyph_free(g); CairoTextExtents e; e.x_MINUS_bearing = ct.x_bearing; e.y_MINUS_bearing = ct.y_bearing; e.width = ct.width; e.height = ct.height; e.x_MINUS_advance = ct.x_advance; e.y_MINUS_advance = ct.y_advance; return e; }")
+
+  (private text-to-glyphs!)
+  (hidden text-to-glyphs!)
+  (deftemplate text-to-glyphs!
+               (Fn
+                 [(Ptr CairoScaledFont)
+                  Double
+                  Double
+                  (Ptr CChar)
+                  (Ref CairoStatus)]
+                 (Array CairoGlyph))
+               "Array $NAME(cairo_scaled_font_t *sf, double x, double y, const char *text, cairo_status_t *st)"
+               "$DECL { cairo_glyph_t *g = NULL; int n = 0; Array a = {.len = 0, .capacity = 0, .data = NULL}; *st = cairo_scaled_font_text_to_glyphs(sf, x, y, text, -1, &g, &n, NULL, NULL, NULL); if (*st == CAIRO_STATUS_SUCCESS && n > 0) { a.len = n; a.capacity = n; a.data = CARP_MALLOC(n * sizeof(CairoGlyph)); CairoGlyph *dst = (CairoGlyph*)a.data; for (int i = 0; i < n; i++) { dst[i].index = (Long)g[i].index; dst[i].x = g[i].x; dst[i].y = g[i].y; } } cairo_glyph_free(g); return a; }")
+  (doc scaled-font-text-to-glyphs
+    "Lay `text` out in a scaled font starting at `(x y)`, returning the glyphs it maps to, or the failing status in the error branch.
+
+The glyphs are copied out of Cairo's allocation, so the result is an ordinary Carp array and can be handed straight to `show-glyphs`.")
+  (defn scaled-font-text-to-glyphs [sf x y text]
+    (let-do [s status-success
+             glyphs (text-to-glyphs! sf x y text &s)]
+      (if (success? s) (Result.Success glyphs) (Result.Error s))))
 
   ; --- Pattern / gradient bindings ---
 

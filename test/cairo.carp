@@ -825,6 +825,243 @@
         (region-destroy reg)
         ok))))
 
+(private enum-is?)
+(hidden enum-is?)
+(defn enum-is? [a b] (Int.= (enum-to-int a) (enum-to-int b)))
+
+(private glyph-is?)
+(hidden glyph-is?)
+(defn glyph-is? [g x y]
+  (and (close? @(CairoGlyph.x g) x) (close? @(CairoGlyph.y g) y)))
+
+(private extents-is?)
+(hidden extents-is?)
+(defn extents-is? [a b]
+  (and
+    (close? @(CairoTextExtents.width a) @(CairoTextExtents.width b))
+    (close? @(CairoTextExtents.height a) @(CairoTextExtents.height b))))
+
+(private surface-ink)
+(hidden surface-ink)
+(defn surface-ink [surf]
+  (let-do [ink 0]
+    (surface-flush surf)
+    (let-do [data (image-surface-get-data surf)
+             n (* (image-surface-get-stride surf)
+                  (image-surface-get-height surf))]
+      (for [i 0 n]
+        (let [b (Pointer.to-value (Pointer.add data (Long.from-int i)))]
+          (unless (Byte.= 0b b) (set! ink (inc ink))))))
+    ink))
+
+(private sans-face)
+(hidden sans-face)
+(defn sans-face []
+  (toy-font-face-create (cstr "sans") slant-normal weight-normal))
+
+(private glyphs-of)
+(hidden glyphs-of)
+(defn glyphs-of [sf x y text]
+  (Result.from-success (scaled-font-text-to-glyphs sf x y text) []))
+
+(private sans-scaled)
+(hidden sans-scaled)
+(defn sans-scaled [face size]
+  (let [fm (matrix-init-scale size size)
+        ctm (matrix-init-identity)]
+    (scaled-font-create face &fm &ctm)))
+
+(defn toy-font-face-ok? []
+  (let-do [face (toy-font-face-create (cstr "serif") slant-italic weight-bold)
+           ok (and (success? (font-face-status face))
+                   (= "serif" &(from-cstr (toy-font-face-get-family face)))
+                   (enum-is? (toy-font-face-get-slant face) slant-italic)
+                   (enum-is? (toy-font-face-get-weight face) weight-bold))]
+    (font-face-destroy face)
+    ok))
+
+(defn font-face-reference-ok? []
+  (let-do [face (sans-face)
+           same (font-face-reference face)
+           ok (and (Pointer.eq face same) (success? (font-face-status same)))]
+    (font-face-destroy same)
+    (font-face-destroy face)
+    ok))
+
+(defn context-font-face-ok? []
+  (let-do [surf (image-surface-create format-argb32 100 100)
+           cr (create surf)
+           face (toy-font-face-create (cstr "serif") slant-normal weight-normal)]
+    (set-font-face cr face)
+    (let-do [family (from-cstr (toy-font-face-get-family (get-font-face cr)))
+             ok (and (= "serif" &family) (success? (status cr)))]
+      (font-face-destroy face)
+      (destroy cr)
+      (surface-destroy surf)
+      ok)))
+
+(defn scaled-font-extents-ok? []
+  (let-do [face (sans-face)
+           sf (sans-scaled face 20.0)
+           fe (scaled-font-extents sf)
+           te (scaled-font-text-extents sf (cstr "Hello"))
+           ok (and (success? (scaled-font-status sf))
+                   (> @(CairoFontExtents.ascent &fe) 0.0)
+                   (> @(CairoFontExtents.height &fe)
+                      @(CairoFontExtents.ascent &fe))
+                   (> @(CairoTextExtents.width &te) 0.0))]
+    (scaled-font-destroy sf)
+    (font-face-destroy face)
+    ok))
+
+(defn scaled-font-agrees-with-context? []
+  (let-do [surf (image-surface-create format-argb32 200 100)
+           cr (create surf)
+           face (sans-face)
+           sf (sans-scaled face 20.0)]
+    (select-font-face cr (cstr "sans") slant-normal weight-normal)
+    (set-font-size cr 20.0)
+    (let-do [from-context (text-extents cr (cstr "Hello"))
+             from-font (scaled-font-text-extents sf (cstr "Hello"))
+             ok (extents-is? &from-context &from-font)]
+      (scaled-font-destroy sf)
+      (font-face-destroy face)
+      (destroy cr)
+      (surface-destroy surf)
+      ok)))
+
+(defn context-scaled-font-ok? []
+  (let-do [surf (image-surface-create format-argb32 200 100)
+           cr (create surf)
+           face (sans-face)
+           sf (sans-scaled face 30.0)]
+    (set-scaled-font cr sf)
+    (let-do [installed (scaled-font-text-extents (get-scaled-font cr)
+                                                 (cstr "Hello"))
+             expected (scaled-font-text-extents sf (cstr "Hello"))
+             ok (and (extents-is? &installed &expected) (success? (status cr)))]
+      (scaled-font-destroy sf)
+      (font-face-destroy face)
+      (destroy cr)
+      (surface-destroy surf)
+      ok)))
+
+(defn text-to-glyphs-ok? []
+  (let-do [face (sans-face)
+           sf (sans-scaled face 20.0)
+           ok (match (scaled-font-text-to-glyphs sf 10.0 50.0 (cstr "Hi"))
+             (Result.Success gs)
+               (and (= 2 (Array.length &gs))
+                    (glyph-is? (Array.unsafe-nth &gs 0) 10.0 50.0)
+                    (> @(CairoGlyph.x (Array.unsafe-nth &gs 1)) 10.0)
+                    (close? @(CairoGlyph.y (Array.unsafe-nth &gs 1)) 50.0)
+                    (/=
+                      @(CairoGlyph.index (Array.unsafe-nth &gs 0))
+                      @(CairoGlyph.index (Array.unsafe-nth &gs 1))))
+             (Result.Error _) false)]
+    (scaled-font-destroy sf)
+    (font-face-destroy face)
+    ok))
+
+(defn text-to-glyphs-empty-ok? []
+  (let-do [face (sans-face)
+           sf (sans-scaled face 20.0)
+           ok (match (scaled-font-text-to-glyphs sf 0.0 0.0 (cstr ""))
+             (Result.Success gs) (Array.empty? &gs)
+             (Result.Error _) false)]
+    (scaled-font-destroy sf)
+    (font-face-destroy face)
+    ok))
+
+(defn text-to-glyphs-invalid-ok? []
+  (let-do [face (sans-face)
+           sf (sans-scaled face 20.0)
+           garbage (String.from-bytes &[255b 254b])
+           ok (match (scaled-font-text-to-glyphs sf 0.0 0.0 (cstr &garbage))
+             (Result.Success _) false
+             (Result.Error e) (not (success? e)))]
+    (scaled-font-destroy sf)
+    (font-face-destroy face)
+    ok))
+
+(defn glyph-extents-ok? []
+  (let-do [surf (image-surface-create format-argb32 200 100)
+           cr (create surf)
+           face (sans-face)
+           sf (sans-scaled face 20.0)
+           gs (glyphs-of sf 10.0 50.0 (cstr "Hi"))]
+    (set-scaled-font cr sf)
+    (let-do [from-context (glyph-extents cr &gs)
+             from-font (scaled-font-glyph-extents sf &gs)
+             ok (and
+               (> @(CairoTextExtents.width &from-context) 0.0)
+               (> @(CairoTextExtents.height &from-context) 0.0)
+               (extents-is? &from-context &from-font))]
+      (scaled-font-destroy sf)
+      (font-face-destroy face)
+      (destroy cr)
+      (surface-destroy surf)
+      ok)))
+
+(defn show-glyphs-renders? []
+  (let-do [surf (image-surface-create format-argb32 120 60)
+           cr (create surf)
+           face (sans-face)
+           sf (sans-scaled face 24.0)
+           gs (glyphs-of sf 10.0 40.0 (cstr "Hi"))
+           blank (surface-ink surf)]
+    (set-scaled-font cr sf)
+    (set-source-rgb cr 0.0 0.0 0.0)
+    (show-glyphs cr &gs)
+    (let-do [drawn (surface-ink surf)
+             ok (and (= 0 blank)
+                     (> drawn 0)
+                     (< drawn (* (image-surface-get-stride surf) 60))
+                     (success? (status cr)))]
+      (scaled-font-destroy sf)
+      (font-face-destroy face)
+      (destroy cr)
+      (surface-destroy surf)
+      ok)))
+
+(defn show-glyphs-empty-ok? []
+  (let-do [surf (image-surface-create format-argb32 60 60)
+           cr (create surf)
+           face (sans-face)
+           sf (sans-scaled face 24.0)
+           none []]
+    (set-scaled-font cr sf)
+    (show-glyphs cr &none)
+    (let-do [ok (and (= 0 (surface-ink surf)) (success? (status cr)))]
+      (scaled-font-destroy sf)
+      (font-face-destroy face)
+      (destroy cr)
+      (surface-destroy surf)
+      ok)))
+
+(defn glyph-path-ok? []
+  (let-do [surf (image-surface-create format-argb32 120 60)
+           cr (create surf)
+           face (sans-face)
+           sf (sans-scaled face 24.0)
+           gs (glyphs-of sf 10.0 40.0 (cstr "Hi"))]
+    (set-scaled-font cr sf)
+    (set-source-rgb cr 0.0 0.0 0.0)
+    (new-path cr)
+    (glyph-path cr &gs)
+    (let-do [pe (path-extents cr)
+             outlined (do (fill cr) (surface-ink surf))
+             ok (and
+               (> @(CairoExtents.x2 &pe) @(CairoExtents.x1 &pe))
+               (> @(CairoExtents.y2 &pe) @(CairoExtents.y1 &pe))
+               (> @(CairoExtents.x1 &pe) 0.0)
+               (> outlined 0))]
+      (scaled-font-destroy sf)
+      (font-face-destroy face)
+      (destroy cr)
+      (surface-destroy surf)
+      ok)))
+
 (defn main []
   (with-test test
     (assert-true test
@@ -1000,4 +1237,43 @@
       "region-xor agrees with region-xor-rectangle")
     (assert-true test
       (region-copy-translate-ok?)
-      "region-copy equals its original, and region-translate round-trips")))
+      "region-copy equals its original, and region-translate round-trips")
+    (assert-true test
+      (toy-font-face-ok?)
+      "toy-font-face-create round-trips family, slant and weight")
+    (assert-true test
+      (font-face-reference-ok?)
+      "font-face-reference returns the same face and survives one destroy")
+    (assert-true test
+      (context-font-face-ok?)
+      "get-font-face reports the face set by set-font-face")
+    (assert-true test
+      (scaled-font-extents-ok?)
+      "scaled-font-extents and -text-extents are non-degenerate")
+    (assert-true test
+      (scaled-font-agrees-with-context?)
+      "scaled-font-text-extents matches text-extents at the same size")
+    (assert-true test
+      (context-scaled-font-ok?)
+      "get-scaled-font measures like the font passed to set-scaled-font")
+    (assert-true test
+      (text-to-glyphs-ok?)
+      "scaled-font-text-to-glyphs places two distinct glyphs advancing rightwards")
+    (assert-true test
+      (text-to-glyphs-empty-ok?)
+      "scaled-font-text-to-glyphs of the empty string succeeds with no glyphs")
+    (assert-true test
+      (text-to-glyphs-invalid-ok?)
+      "scaled-font-text-to-glyphs errors on invalid UTF-8")
+    (assert-true test
+      (glyph-extents-ok?)
+      "glyph-extents is non-degenerate and agrees with scaled-font-glyph-extents")
+    (assert-true test
+      (show-glyphs-renders?)
+      "show-glyphs inks part of an otherwise blank surface")
+    (assert-true test
+      (show-glyphs-empty-ok?)
+      "show-glyphs of no glyphs leaves the surface blank")
+    (assert-true test
+      (glyph-path-ok?)
+      "glyph-path bounds the glyphs and fills to visible pixels")))
