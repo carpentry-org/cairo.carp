@@ -56,7 +56,8 @@ The binding currently covers the subset of Cairo that `anima.carp` needs, with s
 - **Patterns:** linear / radial / surface patterns, color stops, extend and filter modes, pattern matrices, `set-source` and `set-source-surface`.
 - **Text:** `select-font-face`, `set-font-size`, `show-text` (Cairo's built-in toy text API), plus `text-extents` and `font-extents` for measurement.
 - **Font faces:** `CairoFontFace` with `toy-font-face-create` and its family / slant / weight getters, `get-font-face` / `set-font-face`, status, and reference counting.
-- **Scaled fonts:** `CairoScaledFont` built from a face, a font matrix and a CTM, installed with `set-scaled-font` and read back with `get-scaled-font`, plus `scaled-font-extents` and `scaled-font-text-extents`.
+- **Font options:** `CairoFontOptions` with create / copy / destroy / status, `font-options-merge`, `font-options-equal?` and `font-options-hash`, accessors for antialias, subpixel order, hint style and hint metrics, and the `set-font-options` / `get-font-options` / `surface-get-font-options` / `scaled-font-get-font-options` wiring.
+- **Scaled fonts:** `CairoScaledFont` built from a face, a font matrix and a CTM — with default font options via `scaled-font-create` or chosen ones via `scaled-font-create-with-options` — installed with `set-scaled-font` and read back with `get-scaled-font`, plus `scaled-font-extents` and `scaled-font-text-extents`.
 - **Glyphs:** `CairoGlyph` as a first-class value, `scaled-font-text-to-glyphs` to lay text out into positioned glyphs, `show-glyphs`, `glyph-path`, and `glyph-extents` / `scaled-font-glyph-extents`.
 - **Groups:** `push-group` / `push-group-with-content` redirect drawing to an offscreen surface, `pop-group` hands it back as a pattern and `pop-group-to-source` installs it as the source, and `get-group-target` reports where drawing currently goes.
 - **Masks:** `mask` paints the source through a pattern's alpha, `mask-surface` through a surface's.
@@ -64,11 +65,11 @@ The binding currently covers the subset of Cairo that `anima.carp` needs, with s
 
 Enums are exposed as distinct Carp types (`CairoFormat`, `CairoLineCap`, etc.) rather than raw `Int`, so type errors catch mix-ups at compile time.
 
-Not yet bound: font options (`cairo_font_options_t`), font backends other than the toy API, text clusters (`cairo_show_text_glyphs`). Easy to add.
+Not yet bound: font backends other than the toy API, text clusters (`cairo_show_text_glyphs`). Easy to add.
 
 ## Memory management
 
-Cairo uses reference counting internally; this binding does not manage lifetimes for you. Every `Cairo.create` must be paired with a `Cairo.destroy`, every `*-surface-create` with a `Cairo.surface-destroy`, every `Cairo.toy-font-face-create` with a `Cairo.font-face-destroy`, every `Cairo.scaled-font-create` with a `Cairo.scaled-font-destroy`, and every `Cairo.region-create*` with a `Cairo.region-destroy`. `Cairo.font-face-reference` hands back a further reference, which needs a `Cairo.font-face-destroy` of its own. `Cairo.pop-group` hands back a pattern that needs a `Cairo.pattern-destroy`, where `Cairo.pop-group-to-source` disposes of it for you. See the [Cairo manual](https://www.cairographics.org/manual/) for details.
+Cairo uses reference counting internally; this binding does not manage lifetimes for you. Every `Cairo.create` must be paired with a `Cairo.destroy`, every `*-surface-create` with a `Cairo.surface-destroy`, every `Cairo.toy-font-face-create` with a `Cairo.font-face-destroy`, every `Cairo.scaled-font-create*` with a `Cairo.scaled-font-destroy`, every `Cairo.font-options-create` and `Cairo.font-options-copy` with a `Cairo.font-options-destroy`, and every `Cairo.region-create*` with a `Cairo.region-destroy`. The `*-get-font-options` functions hand back a fresh options object, which needs a `Cairo.font-options-destroy` too. `Cairo.font-face-reference` hands back a further reference, which needs a `Cairo.font-face-destroy` of its own. `Cairo.pop-group` hands back a pattern that needs a `Cairo.pattern-destroy`, where `Cairo.pop-group-to-source` disposes of it for you. See the [Cairo manual](https://www.cairographics.org/manual/) for details.
 
 ## Tests
 
