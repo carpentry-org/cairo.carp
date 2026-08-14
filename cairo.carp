@@ -11,6 +11,7 @@
 (register-type CairoRegion "cairo_region_t")
 (register-type CairoFontFace "cairo_font_face_t")
 (register-type CairoScaledFont "cairo_scaled_font_t")
+(register-type CairoFontOptions "cairo_font_options_t")
 
 ; Registered as distinct Carp types so the constants don't collide with Int.
 (register-type CairoStatus "cairo_status_t")
@@ -22,6 +23,9 @@
 (register-type CairoOperator "cairo_operator_t")
 (register-type CairoFontSlant "cairo_font_slant_t")
 (register-type CairoFontWeight "cairo_font_weight_t")
+(register-type CairoSubpixelOrder "cairo_subpixel_order_t")
+(register-type CairoHintStyle "cairo_hint_style_t")
+(register-type CairoHintMetrics "cairo_hint_metrics_t")
 (register-type CairoExtend "cairo_extend_t")
 (register-type CairoFilter "cairo_filter_t")
 (register-type CairoContent "cairo_content_t")
@@ -205,6 +209,24 @@ manual](https://www.cairographics.org/manual/) for details.")
   (register slant-oblique CairoFontSlant "CAIRO_FONT_SLANT_OBLIQUE")
   (register weight-normal CairoFontWeight "CAIRO_FONT_WEIGHT_NORMAL")
   (register weight-bold CairoFontWeight "CAIRO_FONT_WEIGHT_BOLD")
+
+  (register subpixel-order-default
+    CairoSubpixelOrder
+    "CAIRO_SUBPIXEL_ORDER_DEFAULT")
+  (register subpixel-order-rgb CairoSubpixelOrder "CAIRO_SUBPIXEL_ORDER_RGB")
+  (register subpixel-order-bgr CairoSubpixelOrder "CAIRO_SUBPIXEL_ORDER_BGR")
+  (register subpixel-order-vrgb CairoSubpixelOrder "CAIRO_SUBPIXEL_ORDER_VRGB")
+  (register subpixel-order-vbgr CairoSubpixelOrder "CAIRO_SUBPIXEL_ORDER_VBGR")
+
+  (register hint-style-default CairoHintStyle "CAIRO_HINT_STYLE_DEFAULT")
+  (register hint-style-none CairoHintStyle "CAIRO_HINT_STYLE_NONE")
+  (register hint-style-slight CairoHintStyle "CAIRO_HINT_STYLE_SLIGHT")
+  (register hint-style-medium CairoHintStyle "CAIRO_HINT_STYLE_MEDIUM")
+  (register hint-style-full CairoHintStyle "CAIRO_HINT_STYLE_FULL")
+
+  (register hint-metrics-default CairoHintMetrics "CAIRO_HINT_METRICS_DEFAULT")
+  (register hint-metrics-off CairoHintMetrics "CAIRO_HINT_METRICS_OFF")
+  (register hint-metrics-on CairoHintMetrics "CAIRO_HINT_METRICS_ON")
 
   (doc image-surface-create
     "Create an in-memory image surface of the given format, width, and height.")
@@ -588,18 +610,125 @@ manual](https://www.cairographics.org/manual/) for details.")
     (Fn [(Ptr CairoFontFace)] CairoFontWeight)
     "cairo_toy_font_face_get_weight")
 
+  ; --- Font options ---
+
+  (doc font-options-create
+    "Create a font options object with every field at its default. Must be paired with `font-options-destroy`.")
+  (register font-options-create
+    (Fn [] (Ptr CairoFontOptions))
+    "cairo_font_options_create")
+  (doc font-options-copy
+    "Copy `o`. The copy needs a `font-options-destroy` of its own.")
+  (register font-options-copy
+    (Fn [(Ptr CairoFontOptions)] (Ptr CairoFontOptions))
+    "cairo_font_options_copy")
+  (doc font-options-destroy
+    "Free a font options object. Pairs with `font-options-create`, `font-options-copy`, and the `*-get-font-options` functions.")
+  (register font-options-destroy
+    (Fn [(Ptr CairoFontOptions)] ())
+    "cairo_font_options_destroy")
+  (register font-options-status
+    (Fn [(Ptr CairoFontOptions)] CairoStatus)
+    "cairo_font_options_status")
+  (doc font-options-merge
+    "Copy the fields of `other` that are not at their default into `o`, leaving the rest of `o` alone.")
+  (register font-options-merge
+    (Fn [(Ptr CairoFontOptions) (Ptr CairoFontOptions)] ())
+    "cairo_font_options_merge")
+  (doc font-options-equal? "Return `true` if `a` and `b` agree on every field.")
+  (deftemplate font-options-equal?
+               (Fn [(Ptr CairoFontOptions) (Ptr CairoFontOptions)] Bool)
+               "bool $NAME(cairo_font_options_t *a, cairo_font_options_t *b)"
+               "$DECL { return (bool)cairo_font_options_equal(a, b); }")
+  (doc font-options-hash
+    "Hash `o`. Options that are `font-options-equal?` hash alike.")
+  (deftemplate font-options-hash
+               (Fn [(Ptr CairoFontOptions)] Long)
+               "Long $NAME(cairo_font_options_t *o)"
+               "$DECL { return (Long)cairo_font_options_hash(o); }")
+
+  (doc font-options-set-antialias
+    "Set how glyphs are antialiased, using the same `antialias-*` constants as `set-antialias`.")
+  (register font-options-set-antialias
+    (Fn [(Ptr CairoFontOptions) CairoAntialias] ())
+    "cairo_font_options_set_antialias")
+  (register font-options-get-antialias
+    (Fn [(Ptr CairoFontOptions)] CairoAntialias)
+    "cairo_font_options_get_antialias")
+  (doc font-options-set-subpixel-order
+    "Set the subpixel geometry of the display, which `antialias-subpixel` renders for. Has no effect under the other antialias modes.")
+  (register font-options-set-subpixel-order
+    (Fn [(Ptr CairoFontOptions) CairoSubpixelOrder] ())
+    "cairo_font_options_set_subpixel_order")
+  (register font-options-get-subpixel-order
+    (Fn [(Ptr CairoFontOptions)] CairoSubpixelOrder)
+    "cairo_font_options_get_subpixel_order")
+  (doc font-options-set-hint-style
+    "Set how strongly glyph outlines are fitted to the pixel grid, from `hint-style-none` to `hint-style-full`.")
+  (register font-options-set-hint-style
+    (Fn [(Ptr CairoFontOptions) CairoHintStyle] ())
+    "cairo_font_options_set_hint_style")
+  (register font-options-get-hint-style
+    (Fn [(Ptr CairoFontOptions)] CairoHintStyle)
+    "cairo_font_options_get_hint_style")
+  (doc font-options-set-hint-metrics
+    "Set whether font metrics are quantized to whole device units (`hint-metrics-on`) or left unrounded (`hint-metrics-off`).")
+  (register font-options-set-hint-metrics
+    (Fn [(Ptr CairoFontOptions) CairoHintMetrics] ())
+    "cairo_font_options_set_hint_metrics")
+  (register font-options-get-hint-metrics
+    (Fn [(Ptr CairoFontOptions)] CairoHintMetrics)
+    "cairo_font_options_get_hint_metrics")
+
+  (doc set-font-options
+    "Use `o` for subsequent text operations on the context. The context takes a copy, so `o` can be destroyed immediately after.")
+  (register set-font-options
+    (Fn [(Ptr CairoContext) (Ptr CairoFontOptions)] ())
+    "cairo_set_font_options")
+  (doc get-font-options
+    "Return the options set on the context, without the target surface's defaults merged in. Must be paired with `font-options-destroy`.")
+  (deftemplate get-font-options
+               (Fn [(Ptr CairoContext)] (Ptr CairoFontOptions))
+               "cairo_font_options_t* $NAME(cairo_t *cr)"
+               "$DECL { cairo_font_options_t *o = cairo_font_options_create(); cairo_get_font_options(cr, o); return o; }")
+  (doc surface-get-font-options
+    "Return the options a surface's backend renders text with. Must be paired with `font-options-destroy`.")
+  (deftemplate surface-get-font-options
+               (Fn [(Ptr CairoSurface)] (Ptr CairoFontOptions))
+               "cairo_font_options_t* $NAME(cairo_surface_t *surf)"
+               "$DECL { cairo_font_options_t *o = cairo_font_options_create(); cairo_surface_get_font_options(surf, o); return o; }")
+
   ; --- Scaled fonts ---
 
   (doc scaled-font-create
-    "Scale `face` by the font matrix `fm` — usually `(matrix-init-scale size size)` — under the transformation `ctm`, using Cairo's default font options. Must be paired with `scaled-font-destroy`.")
+    "Scale `face` by the font matrix `fm` — usually `(matrix-init-scale size size)` — under the transformation `ctm`, using Cairo's default font options. Must be paired with `scaled-font-destroy`.
+
+Use `scaled-font-create-with-options` to choose the antialiasing and hinting instead.")
   (deftemplate scaled-font-create
                (Fn
                  [(Ptr CairoFontFace) (Ref CairoMatrix) (Ref CairoMatrix)]
                  (Ptr CairoScaledFont))
                "cairo_scaled_font_t* $NAME(cairo_font_face_t *f, CairoMatrix *fm, CairoMatrix *ctm)"
                "$DECL { cairo_matrix_t cfm = {.xx = fm->xx, .yx = fm->yx, .xy = fm->xy, .yy = fm->yy, .x0 = fm->x0, .y0 = fm->y0}; cairo_matrix_t cctm = {.xx = ctm->xx, .yx = ctm->yx, .xy = ctm->xy, .yy = ctm->yy, .x0 = ctm->x0, .y0 = ctm->y0}; cairo_font_options_t *o = cairo_font_options_create(); cairo_scaled_font_t *sf = cairo_scaled_font_create(f, &cfm, &cctm, o); cairo_font_options_destroy(o); return sf; }")
+  (doc scaled-font-create-with-options
+    "Scale `face` the way `scaled-font-create` does, rendering with `opts` instead of Cairo's defaults. The scaled font takes a copy, so `opts` can be destroyed immediately after. Must be paired with `scaled-font-destroy`.")
+  (deftemplate scaled-font-create-with-options
+               (Fn
+                 [(Ptr CairoFontFace)
+                  (Ref CairoMatrix)
+                  (Ref CairoMatrix)
+                  (Ptr CairoFontOptions)]
+                 (Ptr CairoScaledFont))
+               "cairo_scaled_font_t* $NAME(cairo_font_face_t *f, CairoMatrix *fm, CairoMatrix *ctm, cairo_font_options_t *o)"
+               "$DECL { cairo_matrix_t cfm = {.xx = fm->xx, .yx = fm->yx, .xy = fm->xy, .yy = fm->yy, .x0 = fm->x0, .y0 = fm->y0}; cairo_matrix_t cctm = {.xx = ctm->xx, .yx = ctm->yx, .xy = ctm->xy, .yy = ctm->yy, .x0 = ctm->x0, .y0 = ctm->y0}; return cairo_scaled_font_create(f, &cfm, &cctm, o); }")
+  (doc scaled-font-get-font-options
+    "Return the options a scaled font was created with. Must be paired with `font-options-destroy`.")
+  (deftemplate scaled-font-get-font-options
+               (Fn [(Ptr CairoScaledFont)] (Ptr CairoFontOptions))
+               "cairo_font_options_t* $NAME(cairo_scaled_font_t *sf)"
+               "$DECL { cairo_font_options_t *o = cairo_font_options_create(); cairo_scaled_font_get_font_options(sf, o); return o; }")
   (doc scaled-font-destroy
-    "Drop a reference to a scaled font. Pairs with `scaled-font-create`.")
+    "Drop a reference to a scaled font. Pairs with `scaled-font-create` and `scaled-font-create-with-options`.")
   (register scaled-font-destroy
     (Fn [(Ptr CairoScaledFont)] ())
     "cairo_scaled_font_destroy")

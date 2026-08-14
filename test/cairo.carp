@@ -16,6 +16,10 @@
 (hidden out-svg)
 (def out-svg "cairo-test.svg")
 
+(private out-pdf)
+(hidden out-pdf)
+(def out-pdf "cairo-test.pdf")
+
 (private close?)
 (hidden close?)
 (defn close? [a b] (< (Double.abs (- a b)) 0.0001))
@@ -1062,6 +1066,181 @@
       (surface-destroy surf)
       ok)))
 
+(private dark-byte?)
+(hidden dark-byte?)
+(defn dark-byte? [b] (Byte.= 0b b))
+
+(private partial-byte?)
+(hidden partial-byte?)
+(defn partial-byte? [b] (and (not (dark-byte? b)) (not (Byte.= 255b b))))
+
+(private count-bytes)
+(hidden count-bytes)
+(defn count-bytes [surf pred]
+  (let-do [n 0]
+    (surface-flush surf)
+    (let-do [data (image-surface-get-data surf)
+             total (* (image-surface-get-stride surf)
+                      (image-surface-get-height surf))]
+      (for [i 0 total]
+        (when (~pred (Pointer.to-value (Pointer.add data (Long.from-int i))))
+          (set! n (inc n)))))
+    n))
+
+(private surfaces-differ?)
+(hidden surfaces-differ?)
+(defn surfaces-differ? [a b]
+  (let-do [differ false]
+    (surface-flush a)
+    (surface-flush b)
+    (let-do [da (image-surface-get-data a)
+             db (image-surface-get-data b)
+             total (* (image-surface-get-stride a) (image-surface-get-height a))]
+      (for [i 0 total]
+        (unless (Byte.=
+            (Pointer.to-value (Pointer.add da (Long.from-int i)))
+            (Pointer.to-value (Pointer.add db (Long.from-int i))))
+          (set! differ true))))
+    differ))
+
+(private draw-text-antialiased)
+(hidden draw-text-antialiased)
+(defn draw-text-antialiased [surf aa]
+  (let-do [cr (create surf)
+           o (font-options-create)]
+    (set-source-rgb cr 1.0 1.0 1.0)
+    (paint cr)
+    (font-options-set-antialias o aa)
+    (set-font-options cr o)
+    (set-source-rgb cr 0.0 0.0 0.0)
+    (select-font-face cr (cstr "sans") slant-normal weight-normal)
+    (set-font-size cr 30.0)
+    (move-to cr 5.0 40.0)
+    (show-text cr (cstr "Wagon"))
+    (font-options-destroy o)
+    (destroy cr)))
+
+(defn font-options-defaults-ok? []
+  (let-do [o (font-options-create)
+           ok (and (success? (font-options-status o))
+                   (enum-is? (font-options-get-antialias o) antialias-default)
+                   (enum-is? (font-options-get-subpixel-order o)
+                             subpixel-order-default)
+                   (enum-is? (font-options-get-hint-style o) hint-style-default)
+                   (enum-is? (font-options-get-hint-metrics o)
+                             hint-metrics-default))]
+    (font-options-destroy o)
+    ok))
+
+(defn font-options-roundtrip? []
+  (let-do [o (font-options-create)]
+    (font-options-set-antialias o antialias-none)
+    (font-options-set-subpixel-order o subpixel-order-vrgb)
+    (font-options-set-hint-style o hint-style-slight)
+    (font-options-set-hint-metrics o hint-metrics-off)
+    (let-do [ok (and
+               (enum-is? (font-options-get-antialias o) antialias-none)
+               (enum-is? (font-options-get-subpixel-order o) subpixel-order-vrgb)
+               (enum-is? (font-options-get-hint-style o) hint-style-slight)
+               (enum-is? (font-options-get-hint-metrics o) hint-metrics-off))]
+      (font-options-destroy o)
+      ok)))
+
+(defn font-options-equal-hash-ok? []
+  (let-do [a (font-options-create)
+           b (font-options-create)]
+    (font-options-set-antialias a antialias-subpixel)
+    (font-options-set-hint-style a hint-style-none)
+    (let-do [c (font-options-copy a)
+             ok (and (font-options-equal? a c)
+                     (= (font-options-hash a) (font-options-hash c))
+                     (not (font-options-equal? a b))
+                     (/= (font-options-hash a) (font-options-hash b)))]
+      (font-options-destroy c)
+      (font-options-destroy b)
+      (font-options-destroy a)
+      ok)))
+
+(defn font-options-merge-ok? []
+  (let-do [base (font-options-create)
+           patch (font-options-create)]
+    (font-options-set-antialias base antialias-gray)
+    (font-options-set-hint-style patch hint-style-none)
+    (font-options-merge base patch)
+    (let-do [ok (and
+               (enum-is? (font-options-get-hint-style base) hint-style-none)
+               (enum-is? (font-options-get-antialias base) antialias-gray)
+               (enum-is? (font-options-get-antialias patch) antialias-default))]
+      (font-options-destroy patch)
+      (font-options-destroy base)
+      ok)))
+
+(defn context-font-options-ok? []
+  (let-do [surf (image-surface-create format-argb32 100 100)
+           cr (create surf)
+           o (font-options-create)]
+    (font-options-set-antialias o antialias-gray)
+    (font-options-set-hint-metrics o hint-metrics-off)
+    (set-font-options cr o)
+    (let-do [got (get-font-options cr)
+             ok (and (font-options-equal? o got) (success? (status cr)))]
+      (font-options-destroy got)
+      (font-options-destroy o)
+      (destroy cr)
+      (surface-destroy surf)
+      ok)))
+
+(defn surface-font-options-ok? []
+  (let-do [img (image-surface-create format-argb32 100 100)
+           pdf (pdf-surface-create (cstr out-pdf) 100.0 100.0)
+           from-img (surface-get-font-options img)
+           from-pdf (surface-get-font-options pdf)
+           ok (and
+             (success? (font-options-status from-img))
+             (not (font-options-equal? from-img from-pdf))
+             (enum-is? (font-options-get-hint-metrics from-img) hint-metrics-on)
+             (enum-is? (font-options-get-hint-metrics from-pdf) hint-metrics-off))]
+    (font-options-destroy from-pdf)
+    (font-options-destroy from-img)
+    (surface-destroy pdf)
+    (surface-destroy img)
+    ok))
+
+(defn scaled-font-options-ok? []
+  (let-do [face (sans-face)
+           fm (matrix-init-scale 20.0 20.0)
+           ctm (matrix-init-identity)
+           o (font-options-create)]
+    (font-options-set-antialias o antialias-none)
+    (font-options-set-hint-style o hint-style-none)
+    (let-do [sf (scaled-font-create-with-options face &fm &ctm o)
+             got (scaled-font-get-font-options sf)
+             plain (sans-scaled face 20.0)
+             defaults (scaled-font-get-font-options plain)
+             ok (and (success? (scaled-font-status sf))
+                     (font-options-equal? o got)
+                     (not (font-options-equal? got defaults)))]
+      (font-options-destroy defaults)
+      (font-options-destroy got)
+      (scaled-font-destroy plain)
+      (scaled-font-destroy sf)
+      (font-options-destroy o)
+      (font-face-destroy face)
+      ok)))
+
+(defn antialias-reaches-glyphs? []
+  (let-do [none (image-surface-create format-argb32 200 60)
+           smooth (image-surface-create format-argb32 200 60)]
+    (draw-text-antialiased none antialias-none)
+    (draw-text-antialiased smooth antialias-default)
+    (let-do [ok (and (> (count-bytes none &dark-byte?) 0)
+                     (= 0 (count-bytes none &partial-byte?))
+                     (> (count-bytes smooth &partial-byte?) 0)
+                     (surfaces-differ? none smooth))]
+      (surface-destroy smooth)
+      (surface-destroy none)
+      ok)))
+
 (defn main []
   (with-test test
     (assert-true test
@@ -1276,4 +1455,28 @@
       "show-glyphs of no glyphs leaves the surface blank")
     (assert-true test
       (glyph-path-ok?)
-      "glyph-path bounds the glyphs and fills to visible pixels")))
+      "glyph-path bounds the glyphs and fills to visible pixels")
+    (assert-true test
+      (font-options-defaults-ok?)
+      "a fresh font options object reports every field at its default")
+    (assert-true test
+      (font-options-roundtrip?)
+      "antialias, subpixel order, hint style and hint metrics read back as set")
+    (assert-true test
+      (font-options-equal-hash-ok?)
+      "a copy is equal to its original and hashes alike, where differing options do neither")
+    (assert-true test
+      (font-options-merge-ok?)
+      "font-options-merge takes the non-default fields and leaves the rest of the target alone")
+    (assert-true test
+      (context-font-options-ok?)
+      "get-font-options reports the options set by set-font-options")
+    (assert-true test
+      (surface-font-options-ok?)
+      "surface-get-font-options reports each backend's own defaults: hinted metrics for image surfaces, unhinted for PDF")
+    (assert-true test
+      (scaled-font-options-ok?)
+      "scaled-font-create-with-options carries its options into the scaled font, where scaled-font-create leaves the defaults")
+    (assert-true test
+      (antialias-reaches-glyphs?)
+      "text drawn under antialias-none has no partial pixels where antialias-default does, and the two surfaces differ")))
